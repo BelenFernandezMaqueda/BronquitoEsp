@@ -14,13 +14,13 @@ public:
     void begin();
 
     // Actualiza las lecturas de temperatura y humedad desde el sensor
-    bool read();
+    bool leer();
 
     // Retorna la temperatura ambiental en °C
-    float getTemperature() const;
+    float getTemperatura() const;
 
     // Retorna la humedad relativa en %
-    float getHumidity() const;
+    float getHumedad() const;
 
     // Retorna la presión de vapor de agua saturado (mmHg) según la ecuación de Antoine
     float getPsat() const;
@@ -32,7 +32,7 @@ public:
     float getBTPSFactor() const;
 
     // Aplica el factor BTPS a un volumen no corregido (ATPS)
-    float correctVolume(float volumeATPS) const;
+    float Volumen(float volumeATPS) const;
 
 private:
     uint8_t _pin;

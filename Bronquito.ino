@@ -1,6 +1,7 @@
 #include "SystemState.h"
 #include "UI.h"
 #include "Storage.h"
+#include "BTPSSensor.h"
 
 BronquitoUI ui;
 BronquitoStorage storage(5);

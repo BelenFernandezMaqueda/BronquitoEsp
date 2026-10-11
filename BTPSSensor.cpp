@@ -7,8 +7,9 @@ BTPSSensor::BTPSSensor(uint8_t pin, uint8_t type, float presionBarometrica)
 void BTPSSensor::begin() {
     _dht.begin();
 }
-
-bool BTPSSensor::read() {
+// Dos funciones principales que hacen todos los cálculos: 
+// lee los valores y decide si son válidos. Si lo son llama a la función que hace los cálculos. 
+bool BTPSSensor::leer() {
     float temp = _dht.readTemperature();
     float hum = _dht.readHumidity();
 
@@ -24,7 +25,7 @@ bool BTPSSensor::read() {
     updateBTPSFactor();
     return true;
 }
-
+//se hace automático cada vez que hay valores válidos en read, es el que calcula el valor BTPS. 
 void BTPSSensor::updateBTPSFactor() {
     // 1. Presión de vapor de agua saturado a Tamb (mmHg) usando Antoine
     float exponente = 5.053988 - (1647.6 / (_tAmb + 226.0));
@@ -40,11 +41,12 @@ void BTPSSensor::updateBTPSFactor() {
     _factorBTPS = termTemp * termPresion;
 }
 
-float BTPSSensor::getTemperature() const {
+// Todas estas funciones nos sirven para obtener los datos ya procesados sin volver a llamar al sensor. 
+float BTPSSensor::getTemperatura() const {
     return _tAmb;
 }
 
-float BTPSSensor::getHumidity() const {
+float BTPSSensor::getHumedad() const {
     return _hr;
 }
 
@@ -61,6 +63,6 @@ float BTPSSensor::getBTPSFactor() const {
     return _factorBTPS;
 }
 
-float BTPSSensor::correctVolume(float volumeATPS) const {
+float BTPSSensor::Volumen(float volumeATPS) const {
     return volumeATPS * _factorBTPS;
 }

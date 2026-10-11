@@ -1,7 +1,7 @@
 #include "Storage.h"
 
-BronquitoStorage::BronquitoStorage(uint8_t csPin) 
-  : chipSelectPin(csPin), synced(false), lastError(ERR_NO_CARD) {
+BronquitoStorage::BronquitoStorage(uint8_t csPin)
+  : chipSelectPin(csPin), sdMontada(false), synced(false), lastError(ERR_NO_CARD) {
   paciente.dni = "Sin Sincronizar";
   paciente.pin = "1234";
 }
@@ -10,40 +10,75 @@ bool BronquitoStorage::begin() {
   return (sync() == STORAGE_OK);
 }
 
-StorageStatus BronquitoStorage::sync() {
-  Serial.println("--------------------------------------------------");
-  Serial.println("[STORAGE] Intentando inicializar lector MicroSD...");
+void BronquitoStorage::marcarError(StorageStatus e, const char *textoDNI) {
+  paciente.dni = textoDNI;
+  synced = false;
+  lastError = e;
+}
 
-  if (!SD.begin(chipSelectPin)) {
-    Serial.println("[STORAGE] ¡ERROR! No se detectó la tarjeta MicroSD.");
-    paciente.dni = "Sin Sincronizar";
-    synced = false;
-    lastError = ERR_NO_CARD;
+bool BronquitoStorage::tarjetaPresente() {
+  if (!sdMontada) return false;
+  File raiz = SD.open("/");
+  bool ok = (bool)raiz;
+  if (raiz) raiz.close();
+  if (!ok) {              // la sacaron: desmontar para poder volver a montar después
+    SD.end();
+    sdMontada = false;
+  }
+  return ok;
+}
+
+StorageStatus BronquitoStorage::sync(bool verbose) {
+  if (verbose) {
     Serial.println("--------------------------------------------------");
-    return ERR_NO_CARD;
+    Serial.println("[STORAGE] Intentando inicializar lector MicroSD...");
   }
 
+  // 1) Montar la tarjeta si todavía no está montada
+  if (!sdMontada) {
+    if (!SD.begin(chipSelectPin)) {
+      if (verbose) {
+        Serial.println("[STORAGE] ¡ERROR! No se detectó la tarjeta MicroSD.");
+        Serial.println("--------------------------------------------------");
+      }
+      marcarError(ERR_NO_CARD, "Sin Sincronizar");
+      return ERR_NO_CARD;
+    }
+    sdMontada = true;
+  }
+
+  // 2) Abrir perfil.json
   File perfilFile = SD.open("/perfil.json", FILE_READ);
   if (!perfilFile) {
-    Serial.println("[STORAGE] ¡ERROR! No se encontró /perfil.json en la raíz.");
-    paciente.dni = "Sin Sincronizar";
-    synced = false;
-    lastError = ERR_FILE_NOT_FOUND;
-    Serial.println("--------------------------------------------------");
+    // ¿falta el archivo, o sacaron la tarjeta?
+    if (!tarjetaPresente()) {
+      if (verbose) {
+        Serial.println("[STORAGE] ¡ERROR! La tarjeta ya no está.");
+        Serial.println("--------------------------------------------------");
+      }
+      marcarError(ERR_NO_CARD, "Sin Sincronizar");
+      return ERR_NO_CARD;
+    }
+    if (verbose) {
+      Serial.println("[STORAGE] ¡ERROR! No se encontró /perfil.json en la raíz.");
+      Serial.println("--------------------------------------------------");
+    }
+    marcarError(ERR_FILE_NOT_FOUND, "Sin Sincronizar");
     return ERR_FILE_NOT_FOUND;
   }
 
+  // 3) Leer el JSON
   JsonDocument doc;
   DeserializationError error = deserializeJson(doc, perfilFile);
   perfilFile.close();
 
   if (error) {
-    Serial.print("[STORAGE] ¡ERROR! Formato JSON inválido: ");
-    Serial.println(error.f_str());
-    paciente.dni = "Error en JSON";
-    synced = false;
-    lastError = ERR_JSON_PARSE;
-    Serial.println("--------------------------------------------------");
+    if (verbose) {
+      Serial.print("[STORAGE] ¡ERROR! Formato JSON inválido: ");
+      Serial.println(error.f_str());
+      Serial.println("--------------------------------------------------");
+    }
+    marcarError(ERR_JSON_PARSE, "Error en JSON");
     return ERR_JSON_PARSE;
   }
 
@@ -60,9 +95,10 @@ StorageStatus BronquitoStorage::sync() {
   synced = true;
   lastError = STORAGE_OK;
 
-  Serial.println("[STORAGE] ¡Perfil cargado correctamente!");
-  Serial.print(" - DNI Paciente: "); Serial.println(paciente.dni);
-  Serial.println("--------------------------------------------------");
-
+  if (verbose) {
+    Serial.println("[STORAGE] ¡Perfil cargado correctamente!");
+    Serial.print(" - DNI Paciente: "); Serial.println(paciente.dni);
+    Serial.println("--------------------------------------------------");
+  }
   return STORAGE_OK;
 }

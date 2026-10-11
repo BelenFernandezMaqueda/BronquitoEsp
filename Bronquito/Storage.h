@@ -33,7 +33,13 @@ public:
   BronquitoStorage(uint8_t csPin = SD_CS_DEFAULT);
 
   bool begin();
-  StorageStatus sync();
+
+  // Monta la SD si hace falta y lee /perfil.json.
+  // verbose = false para chequeos repetidos (no llena el monitor serie).
+  StorageStatus sync(bool verbose = true);
+
+  // true si la tarjeta sigue ahí (si no, la desmonta para poder volver a montar)
+  bool tarjetaPresente();
 
   PerfilPaciente getPerfil() const { return paciente; }
   String getPin() const { return paciente.pin; }
@@ -43,9 +49,12 @@ public:
 
 private:
   uint8_t chipSelectPin;
+  bool sdMontada;
   PerfilPaciente paciente;
   bool synced;
   StorageStatus lastError;
+
+  void marcarError(StorageStatus e, const char *textoDNI);
 };
 
 #endif

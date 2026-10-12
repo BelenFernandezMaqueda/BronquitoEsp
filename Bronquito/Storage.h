@@ -16,6 +16,13 @@ enum StorageStatus {
   ERR_JSON_PARSE       // El archivo existe pero el formato JSON es inválido
 };
 
+enum FormatoResultado {
+  FORMATO_OK,
+  FORMATO_SIN_SD,      // No hay tarjeta
+  FORMATO_PENDIENTES,  // Hay pruebas con "sincronizado": false (no se borró nada)
+  FORMATO_ERROR        // Algún archivo no se pudo borrar
+};
+
 struct PerfilPaciente {
   String dni;
   String pin;
@@ -26,6 +33,9 @@ struct PerfilPaciente {
   String nacimiento;
   String registro;
   String enfermedad;
+  String nombre;
+  String apellido;
+  String pinVersion;
 };
 
 class BronquitoStorage {
@@ -47,6 +57,21 @@ public:
   bool isSynced() const { return synced; }
   StorageStatus getLastError() const { return lastError; }
 
+  bool pinPendiente() const { return paciente.pin.length() == 0; }   // el PIN todavía no fue validado
+  String getPinVersion() const { return paciente.pinVersion; }
+  String getNombre() const { return paciente.nombre; }
+  String getApellido() const { return paciente.apellido; }
+
+  bool guardarPerfil(JsonVariantConst perfil);                       // escribe /perfil.json (sin PIN)
+  bool guardarPin(const String& pin, const String& version);         // guarda el PIN ya validado
+
+  // Cantidad de pruebas (.json en EVALUACIONES/ y ENTRENAMIENTOS/) con "sincronizado": false
+  int contarPendientes();
+
+  // Borra perfil.json, CONFIGURACION.JSON y los archivos de EVALUACIONES/ y ENTRENAMIENTOS/.
+  // Si hay pruebas sin subir no borra nada, salvo que forzar = true.
+  FormatoResultado formatearFabrica(bool forzar = false);
+
 private:
   uint8_t chipSelectPin;
   bool sdMontada;
@@ -55,6 +80,7 @@ private:
   StorageStatus lastError;
 
   void marcarError(StorageStatus e, const char *textoDNI);
+  bool escribirJson(const char *ruta, JsonDocument &doc);
 };
 
 #endif

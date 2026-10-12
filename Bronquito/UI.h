@@ -30,6 +30,7 @@
 #define COLOR_TARJETA_BG  0xF7DE
 
 #define DOT_R 4
+enum EstadoConexion { CON_NINGUNA, CON_SOLO_WIFI, CON_WIFI_Y_COMPU };
 
 class BronquitoUI {
 public:
@@ -48,6 +49,26 @@ public:
   void showErrorMessage(String title, String message);
   void setSynced(bool synced) { isSynced = synced; }
   void setDNI(String dni) { userDNI = dni; }
+  void setEstadoConexion(EstadoConexion e) { estadoCon = e; }
+  int  elegirConexion(const String& ssid);
+
+  // Mensaje centrado de dos líneas (ej: "Conectando a:", "MiRed")
+  void mostrarMensaje(const String &l1, const String &l2 = "", uint16_t color = BRONQUITO_CYAN);
+
+  // Lista de redes. Devuelve el índice elegido (0..n-1), o:
+  //  -1 = reescanear, -2 = escribir el nombre a mano, -3 = volver
+  int elegirRed(const String *nombres, const int *rssi, int n);
+
+  // Teclado en pantalla (bloqueante): devuelve el texto cuando se toca OK
+  String pedirTexto(const String &titulo, String inicial = "");
+
+  // Teclado numérico (hasta 3 dígitos) con un mensaje arriba (hasta 3 líneas).
+  // "prefijo" se muestra delante de lo que se escribe (ej: "10.200.0.").
+  // Devuelve los dígitos al tocar OK, o "" si se toca VOLVER.
+  String pedirCodigo(const String *lineas, int nLineas, const String &prefijo);
+
+  bool   pedirConfirmacion(const String& titulo, const String& l1, const String& l2 = "");   // true = ACEPTAR
+  String pedirPin(const String& titulo, const String& subtitulo = "");                       // 4 dígitos, "" si VOLVER
 
   // Escucha de eventos táctiles
   UIEvent checkTouch(SystemState currentState);
@@ -65,6 +86,7 @@ private:
   String userDNI;
   bool lastTouchState;
   bool isSynced;
+  EstadoConexion estadoCon;
 
   // Rastro del punto rojo de depuración
   int dotX, dotY;
@@ -75,6 +97,12 @@ private:
   void redrawArea(int x, int y, int w, int h, SystemState currentState);
   void clearTouchDot(SystemState currentState);
   void drawTouchDot(int x, int y);
+
+  //Para conexion wifi
+  bool leerToque(int &x, int &y);
+  void dibujarBoton(int x, int y, int w, int h, const String &texto, uint16_t color, int tam = 2);
+  void dibujarCampoTexto(const String &texto);
+  void dibujarTeclado(int capa);
 };
 
 #endif

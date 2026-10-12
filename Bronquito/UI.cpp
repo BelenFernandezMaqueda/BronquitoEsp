@@ -4,6 +4,13 @@ BronquitoUI::BronquitoUI()
   : tft(), touchSPI(HSPI), touch(TOUCH_CS), pinEntered(""), userDNI("Sin Sincronizar"), lastTouchState(false), isSynced(false), estadoCon(CON_NINGUNA), dotX(0), dotY(0), hasDot(false) {}
 
 void BronquitoUI::begin() {
+  // Pulso de Reset físico para el controlador TFT (GPIO4)
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW);
+  delay(50);
+  digitalWrite(4, HIGH);
+  delay(100);
+
   tft.init();
   tft.setRotation(1); // Apaisado (480x320)
 

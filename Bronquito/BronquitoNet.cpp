@@ -74,14 +74,15 @@ ResultadoWifi BronquitoNetwork::conectar(const String &ssid, const String &clave
   WiFi.begin(ssid.c_str(), clave.c_str());
 
   unsigned long t0 = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - t0 < timeoutMs) delay(250);
+  while (WiFi.status() != WL_CONNECTED && (millis() - t0) < timeoutMs) {
+    delay(250);
+  }
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[NET] No se pudo conectar a " + ssid);
     return RES_WIFI_FALLO;
   }
 
-  // Conectó, pero ¿la red sirve para el código de 3 dígitos? (máscara 255.255.255.0)
   if (!redEs24()) {
     Serial.println("[NET] Red no compatible (máscara " + WiFi.subnetMask().toString() + ")");
     WiFi.disconnect();

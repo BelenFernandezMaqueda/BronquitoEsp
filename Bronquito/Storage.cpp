@@ -1,8 +1,9 @@
 #include "Storage.h"
 #include <vector>
 
-BronquitoStorage::BronquitoStorage(uint8_t csPin)
-  : chipSelectPin(csPin), sdMontada(false), synced(false), lastError(ERR_NO_CARD) {
+BronquitoStorage::BronquitoStorage(uint8_t csPin, uint8_t sckPin, uint8_t misoPin, uint8_t mosiPin)
+  : chipSelectPin(csPin), sckPin(sckPin), misoPin(misoPin), mosiPin(mosiPin),
+    sdMontada(false), synced(false), lastError(ERR_NO_CARD), sdSPI(VSPI) {
   paciente.dni = "Sin Sincronizar";
   paciente.pin = "";
 }
@@ -22,7 +23,7 @@ bool BronquitoStorage::tarjetaPresente() {
   File raiz = SD.open("/");
   bool ok = (bool)raiz;
   if (raiz) raiz.close();
-  if (!ok) {              // la sacaron: desmontar para poder volver a montar después
+  if (!ok) {
     SD.end();
     sdMontada = false;
   }
@@ -35,9 +36,11 @@ StorageStatus BronquitoStorage::sync(bool verbose) {
     Serial.println("[STORAGE] Intentando inicializar lector MicroSD...");
   }
 
-  // 1) Montar la tarjeta si todavía no está montada
+  // 1) Montar la tarjeta con el bus SPI dedicado para J8
   if (!sdMontada) {
-    if (!SD.begin(chipSelectPin)) {
+    sdSPI.begin(sckPin, misoPin, mosiPin, chipSelectPin);
+
+    if (!SD.begin(chipSelectPin, sdSPI)) {
       if (verbose) {
         Serial.println("[STORAGE] ¡ERROR! No se detectó la tarjeta MicroSD.");
         Serial.println("--------------------------------------------------");
@@ -51,7 +54,6 @@ StorageStatus BronquitoStorage::sync(bool verbose) {
   // 2) Abrir perfil.json
   File perfilFile = SD.open("/perfil.json", FILE_READ);
   if (!perfilFile) {
-    // ¿falta el archivo, o sacaron la tarjeta?
     if (!tarjetaPresente()) {
       if (verbose) {
         Serial.println("[STORAGE] ¡ERROR! La tarjeta ya no está.");
@@ -84,11 +86,11 @@ StorageStatus BronquitoStorage::sync(bool verbose) {
   }
 
   String usuario = doc["usuario"] | "";
-  if (usuario.length() == 0) usuario = doc["dni"] | "Desconocido";   // perfiles viejos
-  paciente.dni        = usuario;                     // (el campo se sigue llamando dni por dentro)
+  if (usuario.length() == 0) usuario = doc["dni"] | "Desconocido";
+  paciente.dni        = usuario;
   paciente.nombre     = doc["nombre"] | "";
   paciente.apellido   = doc["apellido"] | "";
-  paciente.pin        = doc["pin"] | "";             // vacío = PIN pendiente de validar
+  paciente.pin        = doc["pin"] | "";
   paciente.pinVersion = doc["pin_version"] | "";
   paciente.sexo       = doc["sexo"] | "-";
   paciente.altura     = doc["altura"] | "-";
@@ -109,10 +111,6 @@ StorageStatus BronquitoStorage::sync(bool verbose) {
   return STORAGE_OK;
 }
 
-// ---------------------------------------------------------------------------
-// ESCRITURA DEL PERFIL
-// ---------------------------------------------------------------------------
-// Escribe a un archivo temporal y después lo renombra, para no dejar el perfil a medias.
 bool BronquitoStorage::escribirJson(const char *ruta, JsonDocument &doc) {
   String tmp = String(ruta) + ".tmp";
   SD.remove(tmp);
@@ -125,7 +123,6 @@ bool BronquitoStorage::escribirJson(const char *ruta, JsonDocument &doc) {
   return SD.rename(tmp, ruta);
 }
 
-// Guarda el perfil que llegó de la web. Solo copia los campos conocidos y NO trae PIN.
 bool BronquitoStorage::guardarPerfil(JsonVariantConst perfil) {
   if (!tarjetaPresente()) return false;
   static const char *CLAVES[] = {"usuario", "nombre", "apellido", "pin_version", "sexo", "altura",
@@ -137,7 +134,6 @@ bool BronquitoStorage::guardarPerfil(JsonVariantConst perfil) {
   return escribirJson("/perfil.json", doc);
 }
 
-// Después de validar el PIN con la web: lo guarda en la SD junto con su versión.
 bool BronquitoStorage::guardarPin(const String &pin, const String &version) {
   if (!tarjetaPresente()) return false;
   File f = SD.open("/perfil.json", FILE_READ);
@@ -154,12 +150,8 @@ bool BronquitoStorage::guardarPin(const String &pin, const String &version) {
   return true;
 }
 
-// ---------------------------------------------------------------------------
-// PRUEBAS PENDIENTES Y FORMATO DE FÁBRICA
-// ---------------------------------------------------------------------------
 static const char *CARPETAS_PRUEBAS[] = {"/EVALUACIONES", "/ENTRENAMIENTOS"};
 
-// Rutas completas de los archivos (no carpetas) que hay dentro de 'carpeta'
 static std::vector<String> listarArchivos(const char *carpeta) {
   std::vector<String> rutas;
   File dir = SD.open(carpeta);
@@ -174,8 +166,6 @@ static std::vector<String> listarArchivos(const char *carpeta) {
   return rutas;
 }
 
-// Si un .json no se puede leer o no dice "sincronizado", se cuenta como pendiente
-// (es preferible no borrarlo).
 int BronquitoStorage::contarPendientes() {
   if (!tarjetaPresente()) return 0;
   JsonDocument filtro;
@@ -199,7 +189,10 @@ int BronquitoStorage::contarPendientes() {
 }
 
 FormatoResultado BronquitoStorage::formatearFabrica(bool forzar) {
-  if (!sdMontada && SD.begin(chipSelectPin)) sdMontada = true;
+  if (!sdMontada) {
+    sdSPI.begin(sckPin, misoPin, mosiPin, chipSelectPin);
+    if (SD.begin(chipSelectPin, sdSPI)) sdMontada = true;
+  }
   if (!tarjetaPresente()) return FORMATO_SIN_SD;
 
   int pendientes = contarPendientes();
@@ -219,7 +212,7 @@ FormatoResultado BronquitoStorage::formatearFabrica(bool forzar) {
     }
   }
 
-  paciente = PerfilPaciente();                       // olvidar al paciente (incluido el PIN)
+  paciente = PerfilPaciente();
   marcarError(ERR_FILE_NOT_FOUND, "Sin Sincronizar");
   Serial.println(ok ? "[STORAGE] Formato de fabrica OK" : "[STORAGE] Formato incompleto");
   return ok ? FORMATO_OK : FORMATO_ERROR;

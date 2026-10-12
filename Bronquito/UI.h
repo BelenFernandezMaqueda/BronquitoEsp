@@ -8,10 +8,10 @@
 #include "SystemState.h"
 
 // --- PINES DEDICADOS DEL TOUCH (CANAL HSPI) ---
-#define TOUCH_CS   27
-#define TOUCH_CLK  25
-#define TOUCH_DIN  32
-#define TOUCH_DO   35
+#define TOUCH_CS   33
+#define TOUCH_CLK  32
+#define TOUCH_DIN  25
+#define TOUCH_DO   26
 
 // --- PALETA DE COLORES BRONQUITO ---
 #define COLOR_FONDO       0xFFFF

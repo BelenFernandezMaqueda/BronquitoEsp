@@ -7,13 +7,17 @@
 #include <SPI.h>
 #include <ArduinoJson.h>
 
-#define SD_CS_DEFAULT 5
+// Pines asignados al conector J8 (MicroSD) según esquemático
+#define SD_CS_DEFAULT   19
+#define SD_SCK_DEFAULT  22
+#define SD_MISO_DEFAULT 23
+#define SD_MOSI_DEFAULT 21
 
 enum StorageStatus {
   STORAGE_OK,
-  ERR_NO_CARD,         // No hay tarjeta SD conectada o no responde
-  ERR_FILE_NOT_FOUND,  // No existe el archivo /perfil.json
-  ERR_JSON_PARSE       // El archivo existe pero el formato JSON es inválido
+  ERR_NO_CARD,        // No hay tarjeta SD conectada o no responde
+  ERR_FILE_NOT_FOUND, // No existe el archivo /perfil.json
+  ERR_JSON_PARSE      // El archivo existe pero el formato JSON es inválido
 };
 
 enum FormatoResultado {
@@ -40,15 +44,13 @@ struct PerfilPaciente {
 
 class BronquitoStorage {
 public:
-  BronquitoStorage(uint8_t csPin = SD_CS_DEFAULT);
+  BronquitoStorage(uint8_t csPin = SD_CS_DEFAULT, 
+                   uint8_t sckPin = SD_SCK_DEFAULT, 
+                   uint8_t misoPin = SD_MISO_DEFAULT, 
+                   uint8_t mosiPin = SD_MOSI_DEFAULT);
 
   bool begin();
-
-  // Monta la SD si hace falta y lee /perfil.json.
-  // verbose = false para chequeos repetidos (no llena el monitor serie).
   StorageStatus sync(bool verbose = true);
-
-  // true si la tarjeta sigue ahí (si no, la desmonta para poder volver a montar)
   bool tarjetaPresente();
 
   PerfilPaciente getPerfil() const { return paciente; }
@@ -57,27 +59,27 @@ public:
   bool isSynced() const { return synced; }
   StorageStatus getLastError() const { return lastError; }
 
-  bool pinPendiente() const { return paciente.pin.length() == 0; }   // el PIN todavía no fue validado
+  bool pinPendiente() const { return paciente.pin.length() == 0; }
   String getPinVersion() const { return paciente.pinVersion; }
   String getNombre() const { return paciente.nombre; }
   String getApellido() const { return paciente.apellido; }
 
-  bool guardarPerfil(JsonVariantConst perfil);                       // escribe /perfil.json (sin PIN)
-  bool guardarPin(const String& pin, const String& version);         // guarda el PIN ya validado
-
-  // Cantidad de pruebas (.json en EVALUACIONES/ y ENTRENAMIENTOS/) con "sincronizado": false
+  bool guardarPerfil(JsonVariantConst perfil);
+  bool guardarPin(const String& pin, const String& version);
   int contarPendientes();
-
-  // Borra perfil.json, CONFIGURACION.JSON y los archivos de EVALUACIONES/ y ENTRENAMIENTOS/.
-  // Si hay pruebas sin subir no borra nada, salvo que forzar = true.
   FormatoResultado formatearFabrica(bool forzar = false);
 
 private:
   uint8_t chipSelectPin;
+  uint8_t sckPin;
+  uint8_t misoPin;
+  uint8_t mosiPin;
   bool sdMontada;
   PerfilPaciente paciente;
   bool synced;
   StorageStatus lastError;
+  
+  SPIClass sdSPI; // Instancia de SPI independiente para el lector SD (J8)
 
   void marcarError(StorageStatus e, const char *textoDNI);
   bool escribirJson(const char *ruta, JsonDocument &doc);

@@ -5,19 +5,19 @@
 #include "BronquitoNet.h"
 
 BronquitoUI ui;
-BronquitoStorage storage(5);
+// Instanciación con los pines reales de J8 
+BronquitoStorage storage(19, 22, 23, 21);
 BronquitoNetwork net;
 
-bool compuOk = false;                 // la compu respondió la última vez que hablamos
+bool compuOk = false;
 bool wifiAntes = false;
-bool syncInicialPendiente = false;    // al conectarse el WiFi, sincronizar una vez
+bool syncInicialPendiente = false;
 EstadoConexion ultimoEstado = CON_NINGUNA;
 
 SystemState currentState = STATE_LOGIN;
-// --- Chequeo automático de la SD mientras estamos en la pantalla de login ---
 const unsigned long INTERVALO_SD_MS = 2000;
 unsigned long ultimoChequeoSD = 0;
-String ultimaClaveSD = "";   // para redibujar solo cuando algo cambió
+String ultimaClaveSD = "";
 
 // ============================================================================
 // AUXILIAR: GESTIÓN Y FEEDBACK DE ERRORES DE SINCRONIZACIÓN
@@ -358,18 +358,15 @@ void flujoWifi() {
   }
 }
 
-// ============================================================================
-// SETUP
-// ============================================================================
 void setup() {
   Serial.begin(115200);
 
-  // Desactivar ambos chips SPI antes de iniciar
-  pinMode(15, OUTPUT); digitalWrite(15, HIGH); // TFT CS
-  pinMode(5, OUTPUT);  digitalWrite(5, HIGH);  // SD CS
+  // Desactivar ambos Chip Selects antes de iniciar los buses SPI
+  pinMode(15, OUTPUT); digitalWrite(15, HIGH); // TFT CS (J9)
+  pinMode(22, OUTPUT); digitalWrite(22, HIGH); // SD CS (J8)
   delay(100);
 
-  net.begin();   // si hay una red guardada, empieza a conectarse sola
+  net.begin();
   ui.begin();
 
   StorageStatus result = storage.sync();
@@ -378,23 +375,18 @@ void setup() {
   Serial.println(">>> Dispositivo Bronquito iniciado correctamente. <<<");
 }
 
-// ============================================================================
-// LOOP PRINCIPAL
-// ============================================================================
 void loop() {
   UIEvent event = ui.checkTouch(currentState);
 
   actualizarConexion();
   leerComandosSerie();
 
-  // Cuando el WiFi se conecta, una única sincronización (no hay consultas periódicas)
   if (syncInicialPendiente && currentState == STATE_LOGIN) {
     syncInicialPendiente = false;
     sincronizar();
     redibujarPantallaActual();
   }
 
-  // El botón de conexión se actualiza solo (rojo / amarillo / verde)
   EstadoConexion est = calcularEstado();
   if (est != ultimoEstado) {
     ultimoEstado = est;
@@ -402,8 +394,8 @@ void loop() {
     redibujarPantallaActual();
   }
 
-  // Releer la SD sola cada 2 s, solo en la pantalla de login
-  if (currentState == STATE_LOGIN && millis() - ultimoChequeoSD > INTERVALO_SD_MS) {
+  // CORRECCIÓN SINTÁCTICA AQUÍ: (millis() - ultimoChequeoSD)
+  if (currentState == STATE_LOGIN && (millis() - ultimoChequeoSD) > INTERVALO_SD_MS) {
     ultimoChequeoSD = millis();
     StorageStatus st = storage.sync(false);
     String clave = String((int)st) + "|" + storage.getDNI();
@@ -419,18 +411,18 @@ void loop() {
   switch (event) {
     case EVENT_CONNECT_WEB: {
       if (!net.estaConectado()) {
-        flujoWifi();                               // rojo: directo a elegir red
+        flujoWifi();
       } else {
         int op = ui.elegirConexion(net.ssidActual());
-        if (op == 0) flujoWifi();                  // cambiar red
-        else if (op == 1) flujoCompu();            // solo cambiar compu
-        else if (op == 2) {                        // sincronizar con la web
-          if (net.servidorGuardado().length() == 0) flujoCompu();   // todavía no hay compu: pide el código
+        if (op == 0) flujoWifi();
+        else if (op == 1) flujoCompu();
+        else if (op == 2) {
+          if (net.servidorGuardado().length() == 0) flujoCompu();
           else sincronizar();
         }
       }
       actualizarConexion();
-      syncInicialPendiente = false;                // ya hablamos con la compu en el flujo
+      syncInicialPendiente = false;
       ultimoEstado = calcularEstado();
       ui.setEstadoConexion(ultimoEstado);
       redibujarPantallaActual();
@@ -466,9 +458,9 @@ void loop() {
       bool usoOnline = storage.pinPendiente();
 
       if (usoOnline) {
-        entra = (verificarPinOnline(pin) == 1);     // primer ingreso: el PIN se valida en la web
+        entra = (verificarPinOnline(pin) == 1);
       } else {
-        entra = (pin == storage.getPin());          // uso normal: sin conexión
+        entra = (pin == storage.getPin());
       }
 
       if (entra) {
@@ -479,7 +471,7 @@ void loop() {
         ui.drawMainMenu();
       } else {
         Serial.println("[FSM] PIN INCORRECTO");
-        if (!usoOnline) { ui.showPinStatus(false); delay(1000); }   // en modo online ya se mostró el motivo
+        if (!usoOnline) { ui.showPinStatus(false); delay(1000); }
         ui.clearPin();
         ui.drawPinScreen();
       }
@@ -488,7 +480,7 @@ void loop() {
 
     case EVENT_SELECT_TRAINING:
     case EVENT_SELECT_CALIBRATION:
-      if (!net.horaValida()) {                     // sin hora real no se puede fechar una prueba
+      if (!net.horaValida()) {
         ui.mostrarMensaje("Falta poner la hora", "Conectate a la compu", COLOR_ROJO_DEL);
         delay(2200);
         redibujarPantallaActual();

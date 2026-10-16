@@ -281,6 +281,35 @@ void sincronizar() {
   delay(1200);
 }
 
+// Al entrar a ENTRENAMIENTO: trae la frecuencia vigente, pisa la de la SD y le avisa
+// a la web que ya la tiene (ahí se va el punto amarillo de la web).
+// Sin WiFi o sin compu sigue con la que ya tiene: entrenar no depende de la web.
+// true si la SD quedó con la que mandó la web.
+bool actualizarFrecuencia() {
+  if (!net.estaConectado() || net.servidorGuardado().length() == 0 || !storage.isSynced()) return false;
+
+  ui.mostrarMensaje("Actualizando frecuencia...");
+  JsonDocument resp;
+  int http = net.llamarApi(net.servidorGuardado(), "GET",
+                           "/dispositivo/frecuencia?usuario=" + storage.getDNI(), "", resp);
+  if (http != 200) return false;
+
+  JsonObject f = resp["frecuencia"];
+  if (f.isNull()) return false;                    // el médico todavía no definió una
+  if (!storage.guardarFrecuencia(f)) {
+    Serial.println("[FREC] No se pudo guardar en la SD");
+    return false;
+  }
+
+  JsonDocument cuerpo;
+  cuerpo["id_frecuencia"] = f["id"];
+  String enviar;
+  serializeJson(cuerpo, enviar);
+  JsonDocument confirmacion;
+  net.llamarApi(net.servidorGuardado(), "POST", "/dispositivo/frecuencia/confirmar", enviar, confirmacion);
+  return true;
+}
+
 // ============================================================================
 // FLUJOS DE CONEXIÓN
 // ============================================================================
@@ -363,7 +392,7 @@ void setup() {
 
   // Desactivar ambos Chip Selects antes de iniciar los buses SPI
   pinMode(15, OUTPUT); digitalWrite(15, HIGH); // TFT CS (J9)
-  pinMode(22, OUTPUT); digitalWrite(22, HIGH); // SD CS (J8)
+  pinMode(19, OUTPUT); digitalWrite(19, HIGH); // SD CS (J8)
   delay(100);
 
   net.begin();
@@ -488,6 +517,12 @@ void loop() {
       }
       Serial.println(event == EVENT_SELECT_TRAINING ? "[FSM] Opción: ENTRENAMIENTO MUSCULAR"
                                                     : "[FSM] Opción: CALIBRACIÓN DE SENSORES");
+      if (event == EVENT_SELECT_TRAINING) {
+        bool actualizada = actualizarFrecuencia();
+        FrecuenciaGuardada f = storage.leerFrecuencia();   // siempre se muestra lo que quedó en la SD
+        ui.mostrarFrecuencia(f.sesiones, f.dias, f.vigenteDesde, actualizada);
+        redibujarPantallaActual();
+      }
       break;
 
     case EVENT_SELECT_CONFIG:

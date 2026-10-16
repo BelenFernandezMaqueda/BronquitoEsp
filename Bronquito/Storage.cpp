@@ -150,6 +150,40 @@ bool BronquitoStorage::guardarPin(const String &pin, const String &version) {
   return true;
 }
 
+// Pisa solo la clave "frecuencia": lo demás de CONFIGURACION.JSON (ej. la rutina) queda igual.
+bool BronquitoStorage::guardarFrecuencia(JsonVariantConst frecuencia) {
+  if (!tarjetaPresente()) return false;
+  JsonDocument doc;
+  File f = SD.open("/CONFIGURACION.JSON", FILE_READ);
+  if (f) {
+    if (deserializeJson(doc, f) || !doc.is<JsonObject>()) doc.clear();   // si estaba corrupto, se rehace
+    f.close();
+  }
+  doc["frecuencia"] = frecuencia;
+  return escribirJson("/CONFIGURACION.JSON", doc);
+}
+
+FrecuenciaGuardada BronquitoStorage::leerFrecuencia() {
+  FrecuenciaGuardada fr;
+  if (!tarjetaPresente()) return fr;
+  File f = SD.open("/CONFIGURACION.JSON", FILE_READ);
+  if (!f) return fr;
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, f);
+  f.close();
+  if (err) return fr;
+
+  JsonObjectConst frec = doc["frecuencia"];
+  if (frec.isNull()) return fr;
+  for (JsonVariantConst d : frec["dias_semana"].as<JsonArrayConst>()) {
+    int dia = d | -1;
+    if (dia >= 0 && dia < 7) fr.dias[dia] = true;
+  }
+  fr.sesiones = frec["sesiones_por_semana"] | 0;
+  fr.vigenteDesde = String(frec["vigente_desde"] | "");
+  return fr;
+}
+
 static const char *CARPETAS_PRUEBAS[] = {"/EVALUACIONES", "/ENTRENAMIENTOS"};
 
 static std::vector<String> listarArchivos(const char *carpeta) {

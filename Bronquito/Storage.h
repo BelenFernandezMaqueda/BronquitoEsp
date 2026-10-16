@@ -42,6 +42,13 @@ struct PerfilPaciente {
   String pinVersion;
 };
 
+// Lo que hay en la clave "frecuencia" de /CONFIGURACION.JSON
+struct FrecuenciaGuardada {
+  int sesiones = 0;        // 0 = no hay ninguna guardada
+  bool dias[7] = {};       // 0 = lunes ... 6 = domingo
+  String vigenteDesde;     // "AAAA-MM-DD"
+};
+
 class BronquitoStorage {
 public:
   BronquitoStorage(uint8_t csPin = SD_CS_DEFAULT, 
@@ -66,6 +73,8 @@ public:
 
   bool guardarPerfil(JsonVariantConst perfil);
   bool guardarPin(const String& pin, const String& version);
+  bool guardarFrecuencia(JsonVariantConst frecuencia);   // en /CONFIGURACION.JSON
+  FrecuenciaGuardada leerFrecuencia();
   int contarPendientes();
   FormatoResultado formatearFabrica(bool forzar = false);
 

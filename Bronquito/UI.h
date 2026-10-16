@@ -70,6 +70,10 @@ public:
   bool   pedirConfirmacion(const String& titulo, const String& l1, const String& l2 = "");   // true = ACEPTAR
   String pedirPin(const String& titulo, const String& subtitulo = "");                       // 4 dígitos, "" si VOLVER
 
+  // Pantalla de ENTRENAMIENTO con la frecuencia recomendada (bloqueante, hasta VOLVER).
+  // sesiones = 0 si no hay ninguna; dias[7]: 0 = lunes ... 6 = domingo; vigenteDesde "AAAA-MM-DD".
+  void   mostrarFrecuencia(int sesiones, const bool *dias, const String& vigenteDesde, bool recienActualizada);
+
   // Escucha de eventos táctiles
   UIEvent checkTouch(SystemState currentState);
 

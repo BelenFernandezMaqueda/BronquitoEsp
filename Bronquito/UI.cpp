@@ -717,3 +717,66 @@ String BronquitoUI::pedirPin(const String &titulo, const String &subtitulo) {
     mostrarCampo();
   }
 }
+
+// Pantalla de ENTRENAMIENTO: frecuencia recomendada y los días resaltados. Vuelve al tocar VOLVER.
+void BronquitoUI::mostrarFrecuencia(int sesiones, const bool *dias, const String &vigenteDesde, bool recienActualizada) {
+  hasDot = false;
+  tft.fillScreen(COLOR_FONDO);
+
+  // Encabezado (como el menú principal)
+  tft.fillRect(0, 0, 480, 45, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  tft.drawString("Entrenamiento", 15, 23);
+
+  tft.setTextDatum(MC_DATUM);
+  if (sesiones <= 0) {
+    tft.setTextColor(BRONQUITO_BROWN, COLOR_FONDO);
+    tft.drawString("Todavia no hay frecuencia", 240, 125);
+    tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+    tft.drawString("Pedile a tu medico que la cargue", 240, 165);
+  } else {
+    tft.setTextColor(BRONQUITO_BROWN, COLOR_FONDO);
+    tft.drawString("Frecuencia recomendada", 240, 70);
+    tft.setTextColor(BRONQUITO_CYAN, COLOR_FONDO);
+    tft.setTextSize(3);
+    tft.drawString(String(sesiones) + (sesiones == 1 ? " vez" : " veces") + " por semana", 240, 108);
+
+    // Los 7 días; los recomendados en cyan
+    static const char *DIAS[7] = {"Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"};
+    tft.setTextSize(2);
+    for (int i = 0; i < 7; i++) {
+      int x = 35 + i * 60;
+      uint16_t fondo = dias[i] ? BRONQUITO_CYAN : COLOR_CAMPO_BG;
+      tft.fillRoundRect(x, 138, 50, 50, 8, fondo);
+      tft.setTextColor(dias[i] ? COLOR_FONDO : COLOR_TEXTO_GRIS, fondo);
+      tft.drawString(DIAS[i], x + 25, 163);
+    }
+
+    // "2026-10-13" -> "13/10/2026"
+    String fecha = vigenteDesde;
+    if (fecha.length() == 10)
+      fecha = fecha.substring(8, 10) + "/" + fecha.substring(5, 7) + "/" + fecha.substring(0, 4);
+    tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+    tft.drawString("Desde el " + fecha, 240, 213);
+
+    tft.setTextSize(1);
+    if (recienActualizada) {
+      tft.setTextColor(COLOR_VERDE_OK, COLOR_FONDO);
+      tft.drawString("Actualizada desde la web", 240, 238);
+    } else {
+      tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+      tft.drawString("Guardada en la tarjeta SD", 240, 238);
+    }
+  }
+
+  dibujarBoton(90, 258, 300, 46, "VOLVER", COLOR_TEXTO_GRIS);
+  tft.setTextDatum(TL_DATUM);
+
+  while (true) {
+    int x, y;
+    if (!leerToque(x, y)) continue;
+    if (dentro(x, y, 90, 258, 300, 46)) return;
+  }
+}

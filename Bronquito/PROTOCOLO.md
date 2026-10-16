@@ -235,6 +235,26 @@ Valida el PIN que el paciente tipeó. Se usa en tres casos:
 
 El PIN no se imprime en el monitor serie (sólo se loguea `método ruta -> código`).
 
+### 2.5 Frecuencia: `GET /dispositivo/frecuencia` + `POST /dispositivo/frecuencia/confirmar`
+
+Cuándo: al tocar **ENTRENAMIENTO** (`actualizarFrecuencia()` en `Bronquito.ino`), si hay
+WiFi, compu guardada y perfil cargado. Sin conexión sigue con la que ya tiene en la SD.
+Después la pantalla de Entrenamiento muestra la que quedó en la SD (`storage.leerFrecuencia()`
++ `ui.mostrarFrecuencia()`).
+
+**ESP → web:** `GET /dispositivo/frecuencia?usuario=therrera`
+
+| HTTP | Respuesta | Qué hace la ESP |
+|---|---|---|
+| 200 | `{"ok": true, "frecuencia": {"id": 12, "sesiones_por_semana": 3, "dias_semana": [0, 2, 4], "vigente_desde": "2026-10-13"}}` | la guarda en `/CONFIGURACION.JSON` (clave `frecuencia`, `storage.guardarFrecuencia`) y confirma |
+| 200 | `{"ok": true, "frecuencia": null}` | nada (el médico todavía no definió una) |
+| 404 / error de red | — | nada, sigue con la que tiene |
+
+**ESP → web:** `POST /dispositivo/frecuencia/confirmar` con `{"id_frecuencia": 12}` → `{"ok": true}`.
+Con eso la web saca el punto amarillo de "¡No sincronizado con ESP!".
+
+`dias_semana`: 0 = lunes ... 6 = domingo.
+
 ---
 
 ## 3. Flujo completo de una sincronización (`sincronizar()` en `Bronquito.ino`)
@@ -362,7 +382,7 @@ Si `identificar` da 401 con `clave_invalida`, la red anda pero la clave de
 | Archivo | Contenido |
 |---|---|
 | `/perfil.json` | perfil del paciente (`usuario, nombre, apellido, pin_version, sexo, altura, peso, fumador, nacimiento, registro, enfermedad`) + `pin` una vez validado. Perfiles viejos con `dni` siguen funcionando |
-| `/CONFIGURACION.JSON` | rutina y frecuencia (etapa siguiente) |
+| `/CONFIGURACION.JSON` | `frecuencia` (ver 2.5); la rutina se suma en la etapa siguiente |
 | `/EVALUACIONES/`, `/ENTRENAMIENTOS/` | cada prueba = un `.json` de resumen con `"sincronizado": false/true` + un `.csv` |
 
 El perfil se escribe a un `.tmp` y después se renombra, para no dejarlo a medias si se

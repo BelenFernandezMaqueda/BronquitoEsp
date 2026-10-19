@@ -4,7 +4,7 @@
 BronquitoStorage::BronquitoStorage(uint8_t csPin, uint8_t sckPin, uint8_t misoPin, uint8_t mosiPin)
   : chipSelectPin(csPin), sckPin(sckPin), misoPin(misoPin), mosiPin(mosiPin),
     sdMontada(false), synced(false), lastError(ERR_NO_CARD), sdSPI(VSPI) {
-  paciente.dni = "Sin Sincronizar";
+  paciente.dni = "Sin sincronizar";
   paciente.pin = "";
 }
 
@@ -45,7 +45,7 @@ StorageStatus BronquitoStorage::sync(bool verbose) {
         Serial.println("[STORAGE] ¡ERROR! No se detectó la tarjeta MicroSD.");
         Serial.println("--------------------------------------------------");
       }
-      marcarError(ERR_NO_CARD, "Sin Sincronizar");
+      marcarError(ERR_NO_CARD, "Sin sincronizar");
       return ERR_NO_CARD;
     }
     sdMontada = true;
@@ -59,14 +59,14 @@ StorageStatus BronquitoStorage::sync(bool verbose) {
         Serial.println("[STORAGE] ¡ERROR! La tarjeta ya no está.");
         Serial.println("--------------------------------------------------");
       }
-      marcarError(ERR_NO_CARD, "Sin Sincronizar");
+      marcarError(ERR_NO_CARD, "Sin sincronizar");
       return ERR_NO_CARD;
     }
     if (verbose) {
       Serial.println("[STORAGE] ¡ERROR! No se encontró /perfil.json en la raíz.");
       Serial.println("--------------------------------------------------");
     }
-    marcarError(ERR_FILE_NOT_FOUND, "Sin Sincronizar");
+    marcarError(ERR_FILE_NOT_FOUND, "Sin sincronizar");
     return ERR_FILE_NOT_FOUND;
   }
 
@@ -81,7 +81,7 @@ StorageStatus BronquitoStorage::sync(bool verbose) {
       Serial.println(error.f_str());
       Serial.println("--------------------------------------------------");
     }
-    marcarError(ERR_JSON_PARSE, "Error en JSON");
+    marcarError(ERR_JSON_PARSE, "Perfil dañado");
     return ERR_JSON_PARSE;
   }
 
@@ -247,7 +247,7 @@ FormatoResultado BronquitoStorage::formatearFabrica(bool forzar) {
   }
 
   paciente = PerfilPaciente();
-  marcarError(ERR_FILE_NOT_FOUND, "Sin Sincronizar");
+  marcarError(ERR_FILE_NOT_FOUND, "Sin sincronizar");
   Serial.println(ok ? "[STORAGE] Formato de fabrica OK" : "[STORAGE] Formato incompleto");
   return ok ? FORMATO_OK : FORMATO_ERROR;
 }

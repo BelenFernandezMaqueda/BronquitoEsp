@@ -70,6 +70,10 @@ public:
   bool   pedirConfirmacion(const String& titulo, const String& l1, const String& l2 = "");   // true = ACEPTAR
   String pedirPin(const String& titulo, const String& subtitulo = "");                       // 4 dígitos, "" si VOLVER
 
+  // Pantalla que se abre al tocar el circulito de estado (bloqueante, hasta VOLVER).
+  // ssid = "" si no hay WiFi; ipCompu = "" si todavía no se configuró la compu.
+  void   mostrarEstadoConexion(const String& ssid, const String& ipCompu);
+
   // Pantalla de ENTRENAMIENTO con la frecuencia recomendada (bloqueante, hasta VOLVER).
   // sesiones = 0 si no hay ninguna; dias[7]: 0 = lunes ... 6 = domingo; vigenteDesde "AAAA-MM-DD".
   void   mostrarFrecuencia(int sesiones, const bool *dias, const String& vigenteDesde, bool recienActualizada);
@@ -97,6 +101,8 @@ private:
   bool hasDot;
 
   // Auxiliares privados
+  void escribir(const String &s, int x, int y);   // drawString con tildes, ñ, ¡ y ¿
+  void dibujarIndicadorConexion(int cx, int cy);  // circulito verde / amarillo / rojo
   void updatePinDisplay();
   void redrawArea(int x, int y, int w, int h, SystemState currentState);
   void clearTouchDot(SystemState currentState);

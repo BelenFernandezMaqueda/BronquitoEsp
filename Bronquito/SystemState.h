@@ -10,6 +10,7 @@ enum SystemState {
 enum UIEvent {
   EVENT_NONE,
   EVENT_CONNECT_WEB,
+  EVENT_SHOW_CONNECTION,     // tocaron el circulito de estado
   EVENT_GOTO_PIN,
   EVENT_GOTO_LOGIN,
   EVENT_PIN_SUBMIT,

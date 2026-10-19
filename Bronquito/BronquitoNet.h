@@ -49,6 +49,9 @@ public:
   // Abre la memoria y, si hay una red guardada, empieza a conectarse (sin bloquear)
   void begin();
 
+  // Si no hay WiFi, vuelve a intentar con la red guardada (sin bloquear)
+  void reconectarGuardada();
+
   // Busca redes compatibles (WPA/WPA2/WPA3 con clave, o abiertas). Las de empresa/
   // universidad (con usuario y contraseña) no aparecen. Ordenadas de más a menos señal.
   int escanear(RedWifi *redes, int max);

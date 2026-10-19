@@ -8,11 +8,18 @@ void BronquitoNetwork::begin() {
   prefs.begin("bronquito", false);
   WiFi.persistent(false);          // la red la guardamos nosotros, no el sistema
   WiFi.mode(WIFI_STA);
+  reconectarGuardada();
+}
 
+// Empieza a conectarse a la red guardada. Si no está cerca, el core lo reintenta solo
+// en segundo plano hasta que aparezca (escanear() frena esos reintentos).
+void BronquitoNetwork::reconectarGuardada() {
+  if (estaConectado()) return;
   String ssid = prefs.getString("ssid", "");
   if (ssid.length() > 0) {
     String clave = prefs.getString("pass", "");
     Serial.println("[NET] Conectando a la red guardada: " + ssid);
+    WiFi.setAutoReconnect(true);
     WiFi.begin(ssid.c_str(), clave.c_str());
   } else {
     Serial.println("[NET] No hay red guardada.");
@@ -31,12 +38,18 @@ static bool tipoCompatible(wifi_auth_mode_t t) {
 }
 
 int BronquitoNetwork::escanear(RedWifi *redes, int max) {
-  if (WiFi.status() != WL_CONNECTED) {   // cortar un intento a medias para poder escanear
-    WiFi.disconnect();
-    delay(100);
+  // Mientras la ESP intenta conectarse (ej. a la red guardada, que no está cerca) el
+  // escaneo falla. Se corta ese intento y, si igual falla, se reintenta.
+  int n = WIFI_SCAN_FAILED;
+  for (int intento = 0; intento < 3 && n < 0; intento++) {
+    if (!estaConectado()) {
+      WiFi.setAutoReconnect(false);   // si no, el core vuelve a intentar solo
+      WiFi.disconnect();
+      delay(intento == 0 ? 100 : 500);
+    }
+    n = WiFi.scanNetworks();
+    if (n < 0) Serial.printf("[NET] Fallo el escaneo (%d)\n", n);
   }
-
-  int n = WiFi.scanNetworks();
   if (n < 0) n = 0;
 
   RedWifi tmp[20];
@@ -71,6 +84,7 @@ int BronquitoNetwork::escanear(RedWifi *redes, int max) {
 ResultadoWifi BronquitoNetwork::conectar(const String &ssid, const String &clave, uint32_t timeoutMs) {
   WiFi.disconnect();
   delay(100);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid.c_str(), clave.c_str());
 
   unsigned long t0 = millis();
@@ -80,6 +94,8 @@ ResultadoWifi BronquitoNetwork::conectar(const String &ssid, const String &clave
 
   if (WiFi.status() != WL_CONNECTED) {
     Serial.println("[NET] No se pudo conectar a " + ssid);
+    WiFi.setAutoReconnect(false);   // que no siga probando sola con esa clave (y se pueda escanear)
+    WiFi.disconnect();
     return RES_WIFI_FALLO;
   }
 
@@ -195,13 +211,13 @@ bool BronquitoNetwork::identificar(const String& ip, bool vacia, const String& u
 }
 
 String BronquitoNetwork::textoError(int http) {
-  if (http == SIN_RED) return estaConectado() ? "Falta conectar la compu" : "Sin WiFi";
-  if (http < 0)    return "La compu no responde";
-  if (http == 200) return "Respuesta invalida";
-  if (http == 400) return "Datos invalidos";
-  if (http == 401) return "Clave del equipo invalida";
+  if (http == SIN_RED) return estaConectado() ? "Falta conectar la computadora" : "Sin Wi-Fi";
+  if (http < 0)    return "La computadora no responde";
+  if (http == 200) return "Respuesta inválida";
+  if (http == 400) return "Datos inválidos";
+  if (http == 401) return "Clave del equipo inválida";
   if (http == 404) return "No encontrado";
-  if (http == 503) return "Equipo no configurado en web";
+  if (http == 503) return "Equipo no configurado en la web";
   return "Error HTTP " + String(http);
 }
 

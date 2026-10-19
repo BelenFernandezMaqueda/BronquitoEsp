@@ -31,21 +31,21 @@ void manejarResultadoSincronizacion(StorageStatus status) {
   switch (status) {
     case ERR_NO_CARD:
       Serial.println("[FSM] Error: No hay tarjeta MicroSD");
-      ui.showErrorMessage("! ERROR DE TARJETA !", "No se detecto la MicroSD");
+      ui.showErrorMessage("¡Error de tarjeta!", "No se detectó la microSD");
       delay(1800);
       ui.drawLoginScreen();
       break;
 
     case ERR_FILE_NOT_FOUND:
       Serial.println("[FSM] Error: Archivo perfil.json no encontrado");
-      ui.showErrorMessage("! ARCHIVO FALTANTE !", "No existe perfil.json");
+      ui.showErrorMessage("¡Archivo faltante!", "No existe perfil.json");
       delay(1800);
       ui.drawLoginScreen();
       break;
 
     case ERR_JSON_PARSE:
       Serial.println("[FSM] Error: Formato JSON invalido");
-      ui.showErrorMessage("! ARCHIVO CORRUPTO !", "Error en datos de perfil");
+      ui.showErrorMessage("¡Archivo dañado!", "Error en los datos del perfil");
       delay(1800);
       ui.drawLoginScreen();
       break;
@@ -90,21 +90,21 @@ void redibujarPantallaActual() {
 // FORMATO DE FÁBRICA (comandos por el Monitor Serie, solo para desarrollo)
 // ============================================================================
 void formatearDispositivo(bool forzar) {
-  ui.mostrarMensaje("Formateando...");
+  ui.mostrarMensaje("Preparando para nuevo paciente...");
   FormatoResultado r = storage.formatearFabrica(forzar);
 
   switch (r) {
     case FORMATO_OK:
-      ui.mostrarMensaje("Dispositivo formateado", "Sin paciente", COLOR_VERDE_OK);
+      ui.mostrarMensaje("Listo para un nuevo paciente", "Se borraron los datos", COLOR_VERDE_OK);
       break;
     case FORMATO_PENDIENTES:
-      ui.mostrarMensaje("No se formateo", "Hay pruebas sin subir", COLOR_ROJO_DEL);
+      ui.mostrarMensaje("No se pudo preparar", "Hay pruebas sin subir", COLOR_ROJO_DEL);
       break;
     case FORMATO_SIN_SD:
-      ui.mostrarMensaje("No se formateo", "No hay tarjeta SD", COLOR_ROJO_DEL);
+      ui.mostrarMensaje("No se pudo preparar", "No hay tarjeta SD", COLOR_ROJO_DEL);
       break;
     default:
-      ui.mostrarMensaje("Formato incompleto", "Revisa la SD", COLOR_ROJO_DEL);
+      ui.mostrarMensaje("Preparación incompleta", "Revisá la tarjeta SD", COLOR_ROJO_DEL);
       break;
   }
   delay(2000);
@@ -162,7 +162,9 @@ int verificarPinOnline(const String& pin) {
     delay(1500);
     return 0;
   }
-  String motivo = (r.http == 404 && r.error.length() > 0) ? r.error : net.textoError(r.http);
+  String motivo = net.textoError(r.http);
+  if (r.error == "sin_paciente_asignado")    motivo = "No hay un paciente asignado";
+  else if (r.error == "usuario_no_asignado") motivo = "Este usuario no está asignado";
   ui.mostrarMensaje("No se pudo verificar", motivo, COLOR_ROJO_DEL);
   delay(2200);
   return -1;
@@ -175,7 +177,7 @@ bool pedirYVerificarPin(const String& titulo, const String& subtitulo) {
     if (pin.length() == 0) return false;            // VOLVER
     int v = verificarPinOnline(pin);
     if (v == 1) {
-      ui.mostrarMensaje("PIN correcto!", "", COLOR_VERDE_OK);
+      ui.mostrarMensaje("¡PIN correcto!", "", COLOR_VERDE_OK);
       delay(1000);
       return true;
     }
@@ -203,7 +205,7 @@ void atenderSolicitud(JsonObject s) {
   Serial.println("[SYNC] Solicitud " + String(id) + ": " + tipo);
 
   if (tipo == "RESET") {
-    bool acepta = ui.pedirConfirmacion("Formatear dispositivo", "El medico pide borrar", "los datos del paciente");
+    bool acepta = ui.pedirConfirmacion("Preparar para nuevo paciente", "Tu médico pide borrar", "los datos del paciente actual");
     if (!acepta) { confirmarSolicitud(id, false, "rechazado_por_usuario"); return; }
 
     FormatoResultado fr = storage.formatearFabrica(false);
@@ -214,6 +216,10 @@ void atenderSolicitud(JsonObject s) {
       refrescarPerfilEnUI();
     } else if (fr == FORMATO_PENDIENTES) {
       confirmarSolicitud(id, false, "archivos_pendientes");
+    } else if (fr == FORMATO_SIN_SD) {
+      ui.mostrarMensaje("No se pudo preparar", "No se detectó la tarjeta SD", COLOR_ROJO_DEL);
+      delay(2200);
+      confirmarSolicitud(id, false, "sin_tarjeta_sd");
     } else {
       confirmarSolicitud(id, false, "error_formato");
     }
@@ -228,11 +234,18 @@ void atenderSolicitud(JsonObject s) {
     bool acepta = ui.pedirConfirmacion("Cargar paciente", nombre, "Usuario: " + usuario);
     if (!acepta) { confirmarSolicitud(id, false, "rechazado_por_usuario"); return; }
 
-    if (!storage.guardarPerfil(perfil)) { confirmarSolicitud(id, false, "error_sd"); return; }
+    if (!storage.guardarPerfil(perfil)) {
+      bool hayTarjeta = storage.tarjetaPresente();
+      ui.mostrarMensaje("No se pudo cargar", hayTarjeta ? "Error al escribir la SD" : "No se detectó la tarjeta SD",
+                        COLOR_ROJO_DEL);
+      delay(2200);
+      confirmarSolicitud(id, false, hayTarjeta ? "error_sd" : "sin_tarjeta_sd");
+      return;
+    }
     refrescarPerfilEnUI();
 
     // Si el paciente no pone el PIN ahora, queda pendiente y se pide al ingresar
-    pedirYVerificarPin("Hola " + String(perfil["nombre"] | ""), "Ingresa tu PIN para activar");
+    pedirYVerificarPin("Hola " + String(perfil["nombre"] | ""), "Ingresá tu PIN para activarlo");
     confirmarSolicitud(id, true, "");
     return;
   }
@@ -269,14 +282,14 @@ void sincronizar() {
   // 1) ¿Le cambiaron el PIN desde la web? (mismo usuario, otra versión)
   if (storage.isSynced() && !storage.pinPendiente() && r.usuario.length() > 0 &&
       r.usuario == storage.getDNI() && r.pinVersion.length() > 0 && r.pinVersion != storage.getPinVersion()) {
-    pedirYVerificarPin("PIN actualizado", "Ingresa tu nuevo PIN");
+    pedirYVerificarPin("PIN actualizado", "Ingresá tu nuevo PIN");
   }
 
   // 2) Solicitudes pendientes
   int http = procesarSolicitudes();
   refrescarPerfilEnUI();
 
-  if (http == 200) ui.mostrarMensaje("Sincronizado!", "", COLOR_VERDE_OK);
+  if (http == 200) ui.mostrarMensaje("¡Sincronizado!", "", COLOR_VERDE_OK);
   else             ui.mostrarMensaje("No se pudo sincronizar", net.textoError(http), COLOR_ROJO_DEL);
   delay(1200);
 }
@@ -316,29 +329,29 @@ bool actualizarFrecuencia() {
 bool flujoCompu() {
   while (true) {
     String lineas[3] = {
-      "Por favor asegurese de tener la",
-      "computadora en la misma red e inserte",
-      "el pin que aparece en pantalla"
+      "Asegurate de que la computadora",
+      "esté en la misma red e ingresá",
+      "el código que aparece en pantalla"
     };
     String codigo = ui.pedirCodigo(lineas, 3, net.prefijoRed());
     if (codigo.length() == 0) return false;               // VOLVER
 
     if (codigo.toInt() > 255) {
-      ui.mostrarMensaje("Codigo invalido", "Debe ser de 0 a 255", COLOR_ROJO_DEL);
+      ui.mostrarMensaje("Código inválido", "Tiene que ser de 0 a 255", COLOR_ROJO_DEL);
       delay(1800);
       continue;
     }
     String ip = net.prefijoRed() + String(codigo.toInt());
 
-    ui.mostrarMensaje("Probando la compu...", ip);
+    ui.mostrarMensaje("Probando la computadora...", ip);
     RespuestaIdentificar r;
     if (identificarCompu(ip, r)) {
       net.guardarServidor(ip);
-      ui.mostrarMensaje("COMPU CONECTADA!", ip, COLOR_VERDE_OK);
+      ui.mostrarMensaje("¡Computadora conectada!", ip, COLOR_VERDE_OK);
       delay(1500);
       return true;
     }
-    ui.mostrarMensaje("No responde la compu", net.textoError(r.http), COLOR_ROJO_DEL);
+    ui.mostrarMensaje("La computadora no responde", net.textoError(r.http), COLOR_ROJO_DEL);
     delay(2200);
   }
 }
@@ -353,7 +366,10 @@ void flujoWifi() {
     for (int i = 0; i < n; i++) { nombres[i] = redes[i].ssid; rssi[i] = redes[i].rssi; }
 
     int sel = ui.elegirRed(nombres, rssi, n);
-    if (sel == -3) return;       // VOLVER
+    if (sel == -3) {             // VOLVER: el escaneo frenó la red guardada, retomarla
+      net.reconectarGuardada();
+      return;
+    }
     if (sel == -1) continue;     // reescanear
 
     String ssid;
@@ -364,14 +380,14 @@ void flujoWifi() {
       ssid = nombres[sel];
     }
 
-    String clave = ui.pedirTexto("Clave de " + ssid);
+    String clave = ui.pedirTexto("Contraseña de " + ssid);
     if (clave == "") continue;   // VOLVER: vuelve a la lista de redes
 
     ui.mostrarMensaje("Conectando...", ssid);
     ResultadoWifi r = net.conectar(ssid, clave);
 
     if (r == RES_WIFI_OK) {
-      ui.mostrarMensaje("WiFi OK!", ssid, COLOR_VERDE_OK);
+      ui.mostrarMensaje("¡Wi-Fi conectado!", ssid, COLOR_VERDE_OK);
       delay(1000);
       wifiAntes = true;          // el WiFi ya está conectado, no es una "reconexión"
       compuOk = false;           // la compu guardada era de otra red
@@ -379,9 +395,9 @@ void flujoWifi() {
       return;
     }
     if (r == RES_WIFI_INCOMPATIBLE) {
-      ui.mostrarMensaje("Red no compatible", "Use WiFi de casa o hotspot", COLOR_ROJO_DEL);
+      ui.mostrarMensaje("Red no compatible", "Usá el Wi-Fi de tu casa o un hotspot", COLOR_ROJO_DEL);
     } else {
-      ui.mostrarMensaje("No se pudo conectar", "Revisa la clave", COLOR_ROJO_DEL);
+      ui.mostrarMensaje("No se pudo conectar", "Revisá la contraseña", COLOR_ROJO_DEL);
     }
     delay(1800);                 // vuelve a la lista
   }
@@ -458,6 +474,11 @@ void loop() {
       break;
     }
 
+    case EVENT_SHOW_CONNECTION:
+      ui.mostrarEstadoConexion(net.estaConectado() ? net.ssidActual() : "", net.servidorGuardado());
+      redibujarPantallaActual();
+      break;
+
     case EVENT_GOTO_PIN:
       if (storage.isSynced()) {
         Serial.println("[FSM] Perfil válido -> pantalla de PIN");
@@ -468,7 +489,7 @@ void loop() {
         ui.drawPinScreen();
       } else {
         Serial.println("[FSM] BLOQUEADO: no hay perfil cargado.");
-        ui.showErrorMessage("! ACCESO BLOQUEADO !", "Sincronice con la web");
+        ui.showErrorMessage("¡Acceso bloqueado!", "Sincronizá con la web");
         delay(1800);
         ui.drawLoginScreen();
       }
@@ -510,7 +531,7 @@ void loop() {
     case EVENT_SELECT_TRAINING:
     case EVENT_SELECT_CALIBRATION:
       if (!net.horaValida()) {
-        ui.mostrarMensaje("Falta poner la hora", "Conectate a la compu", COLOR_ROJO_DEL);
+        ui.mostrarMensaje("Falta configurar la hora", "Conectate a la computadora", COLOR_ROJO_DEL);
         delay(2200);
         redibujarPantallaActual();
         break;

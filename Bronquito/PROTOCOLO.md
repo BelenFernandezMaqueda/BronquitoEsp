@@ -237,7 +237,7 @@ El PIN no se imprime en el monitor serie (sólo se loguea `método ruta -> códi
 
 ### 2.5 Frecuencia: `GET /dispositivo/frecuencia` + `POST /dispositivo/frecuencia/confirmar`
 
-Cuándo: al tocar **ENTRENAMIENTO** (`actualizarFrecuencia()` en `Bronquito.ino`), si hay
+Cuándo: al tocar **CONFIGURACIÓN** (`actualizarFrecuencia()` en `Bronquito.ino`), si hay
 WiFi, compu guardada y perfil cargado. Sin conexión sigue con la que ya tiene en la SD.
 Después la pantalla de Entrenamiento muestra la que quedó en la SD (`storage.leerFrecuencia()`
 + `ui.mostrarFrecuencia()`).

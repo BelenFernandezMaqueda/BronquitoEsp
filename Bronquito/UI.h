@@ -74,7 +74,7 @@ public:
   // ssid = "" si no hay WiFi; ipCompu = "" si todavía no se configuró la compu.
   void   mostrarEstadoConexion(const String& ssid, const String& ipCompu);
 
-  // Pantalla de ENTRENAMIENTO con la frecuencia recomendada (bloqueante, hasta VOLVER).
+  // Pantalla de CONFIGURACIÓN con la frecuencia recomendada (bloqueante, hasta VOLVER).
   // sesiones = 0 si no hay ninguna; dias[7]: 0 = lunes ... 6 = domingo; vigenteDesde "AAAA-MM-DD".
   void   mostrarFrecuencia(int sesiones, const bool *dias, const String& vigenteDesde, bool recienActualizada);
 

@@ -755,7 +755,7 @@ String BronquitoUI::pedirPin(const String &titulo, const String &subtitulo) {
   }
 }
 
-// Pantalla de ENTRENAMIENTO: frecuencia recomendada y los días resaltados. Vuelve al tocar VOLVER.
+// Pantalla de CONFIGURACIÓN: frecuencia recomendada y los días resaltados. Vuelve al tocar VOLVER.
 void BronquitoUI::mostrarFrecuencia(int sesiones, const bool *dias, const String &vigenteDesde, bool recienActualizada) {
   hasDot = false;
   tft.fillScreen(COLOR_FONDO);
@@ -765,7 +765,7 @@ void BronquitoUI::mostrarFrecuencia(int sesiones, const bool *dias, const String
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
   tft.setTextSize(2);
-  escribir("Entrenamiento", 15, 23);
+  escribir("Configuración", 15, 23);
 
   tft.setTextDatum(MC_DATUM);
   if (sesiones <= 0) {

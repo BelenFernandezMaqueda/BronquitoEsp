@@ -294,9 +294,9 @@ void sincronizar() {
   delay(1200);
 }
 
-// Al entrar a ENTRENAMIENTO: trae la frecuencia vigente, pisa la de la SD y le avisa
+// Al entrar a CONFIGURACIÓN: trae la frecuencia vigente, pisa la de la SD y le avisa
 // a la web que ya la tiene (ahí se va el punto amarillo de la web).
-// Sin WiFi o sin compu sigue con la que ya tiene: entrenar no depende de la web.
+// Sin WiFi o sin compu sigue con la que ya tiene en la SD.
 // true si la SD quedó con la que mandó la web.
 bool actualizarFrecuencia() {
   if (!net.estaConectado() || net.servidorGuardado().length() == 0 || !storage.isSynced()) return false;
@@ -414,7 +414,17 @@ void setup() {
   net.begin();
   ui.begin();
 
+  // Recién encendida, la SD a veces no responde al primer intento: se reintenta
+  // hasta 5 s antes de mostrar el error.
   StorageStatus result = storage.sync();
+  if (result == ERR_NO_CARD) {
+    ui.mostrarMensaje("Buscando la tarjeta microSD...");
+    unsigned long t0 = millis();
+    while (result == ERR_NO_CARD && millis() - t0 < 5000) {
+      delay(500);
+      result = storage.sync(false);
+    }
+  }
   manejarResultadoSincronizacion(result);
 
   Serial.println(">>> Dispositivo Bronquito iniciado correctamente. <<<");
@@ -538,17 +548,16 @@ void loop() {
       }
       Serial.println(event == EVENT_SELECT_TRAINING ? "[FSM] Opción: ENTRENAMIENTO MUSCULAR"
                                                     : "[FSM] Opción: CALIBRACIÓN DE SENSORES");
-      if (event == EVENT_SELECT_TRAINING) {
-        bool actualizada = actualizarFrecuencia();
-        FrecuenciaGuardada f = storage.leerFrecuencia();   // siempre se muestra lo que quedó en la SD
-        ui.mostrarFrecuencia(f.sesiones, f.dias, f.vigenteDesde, actualizada);
-        redibujarPantallaActual();
-      }
       break;
 
-    case EVENT_SELECT_CONFIG:
+    case EVENT_SELECT_CONFIG: {
       Serial.println("[FSM] Opción seleccionada: CONFIGURACIÓN");
+      bool actualizada = actualizarFrecuencia();
+      FrecuenciaGuardada f = storage.leerFrecuencia();   // siempre se muestra lo que quedó en la SD
+      ui.mostrarFrecuencia(f.sesiones, f.dias, f.vigenteDesde, actualizada);
+      redibujarPantallaActual();
       break;
+    }
 
     case EVENT_SELECT_HISTORY:
       Serial.println("[FSM] Opción seleccionada: HISTORIAL");

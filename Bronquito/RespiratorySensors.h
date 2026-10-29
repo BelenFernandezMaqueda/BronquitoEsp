@@ -37,7 +37,7 @@ private:
   // Factores de conversión y calibración
   const float K_FLUJO       = 461.10f;
   const float K_PIM         = 114.18f;
-  const float ALPHA_FILTRO  = 0.30f;
+  const float ALPHA_FILTRO  = 0.50f;
   const float ZONA_MUERTA_V = 0.002f;
   const float UMBRAL_FASE   = 0.2f;
   const float ALPHA_BASE    = 0.02f;

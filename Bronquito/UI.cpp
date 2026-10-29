@@ -1,8 +1,5 @@
 #include "UI.h"
 
-// La fuente de la pantalla (GLCD, página de códigos 437) tiene á é í ó ú ñ Ñ ü Ü É ¿ ¡,
-// pero no Á Í Ó Ú (por eso los títulos no van en mayúsculas). Los textos se escriben en
-// UTF-8 y acá se pasan a los códigos de la fuente.
 static String paraPantalla(const String &s) {
   String out;
   out.reserve(s.length());
@@ -25,7 +22,7 @@ static String paraPantalla(const String &s) {
         case 0xC9: g = 0x90; break;   // É
         case 0xBF: g = 0xA8; break;   // ¿
         case 0xA1: g = 0xAD; break;   // ¡
-        case 0xC1: g = 'A';  break;   // Á, Í, Ó, Ú: no están en la fuente
+        case 0xC1: g = 'A';  break;
         case 0xCD: g = 'I';  break;
         case 0xD3: g = 'O';  break;
         case 0xDA: g = 'U';  break;
@@ -34,7 +31,6 @@ static String paraPantalla(const String &s) {
       out += (char)g;
       continue;
     }
-    // Otro carácter de varios bytes (ej. un emoji en el nombre de una red): se saltea
     while (i + 1 < s.length() && ((uint8_t)s[i + 1] & 0xC0) == 0x80) i++;
     out += '?';
   }
@@ -46,10 +42,9 @@ void BronquitoUI::escribir(const String &s, int x, int y) {
 }
 
 BronquitoUI::BronquitoUI()
-  : tft(), touchSPI(HSPI), touch(TOUCH_CS), pinEntered(""), userDNI("Sin sincronizar"), lastTouchState(false), isSynced(false), estadoCon(CON_NINGUNA), dotX(0), dotY(0), hasDot(false) {}
+  : tft(), touchSPI(HSPI), touch(TOUCH_CS), pinEntered(""), userDNI("Sin sincronizar"), lastTouchState(false), isSynced(false), estadoCon(CON_NINGUNA), dotX(0), dotY(0), hasDot(false), cancelArmado(false) {}
 
 void BronquitoUI::begin() {
-  // Pulso de Reset físico para el controlador TFT (GPIO4)
   pinMode(4, OUTPUT);
   digitalWrite(4, LOW);
   delay(50);
@@ -57,9 +52,9 @@ void BronquitoUI::begin() {
   delay(100);
 
   tft.init();
-  tft.setRotation(1); // Apaisado (480x320)
-  tft.setAttribute(UTF8_SWITCH, false);   // los textos ya llegan convertidos (paraPantalla)
-  tft.setAttribute(CP437_SWITCH, true);   // tabla de caracteres completa, sin el corrimiento viejo
+  tft.setRotation(1);
+  tft.setAttribute(UTF8_SWITCH, false);
+  tft.setAttribute(CP437_SWITCH, true);
 
   touchSPI.begin(TOUCH_CLK, TOUCH_DO, TOUCH_DIN, TOUCH_CS);
   touch.begin(touchSPI);
@@ -94,41 +89,35 @@ void BronquitoUI::drawTouchDot(int x, int y) {
   hasDot = true;
 }
 
-// --- DIBUJO DE PANTALLA 1: LOGIN ---
 void BronquitoUI::drawLoginScreen() {
   tft.fillScreen(COLOR_FONDO);
 
-  // Mascota Pato Bronquito
-  tft.fillEllipse(74, 258, 89, 96, BRONQUITO_YELLOW);     // Cuerpo
-  tft.fillEllipse(-5, 197, 53, 43, BRONQUITO_YELLOW);    // Ala
+  tft.fillEllipse(74, 258, 89, 96, BRONQUITO_YELLOW);
+  tft.fillEllipse(-5, 197, 53, 43, BRONQUITO_YELLOW);
   tft.fillRect(0, 197, 74, 123, BRONQUITO_YELLOW);
-  tft.fillRect(10, 120, 74, 72, BRONQUITO_YELLOW);       // Espalda
-  tft.fillEllipse(84, 120, 74, 69, BRONQUITO_YELLOW);    // Cabeza
-  tft.fillCircle(110, 111, 14, POLLO_OJO_ARO);           // Ojo
+  tft.fillRect(10, 120, 74, 72, BRONQUITO_YELLOW);
+  tft.fillEllipse(84, 120, 74, 69, BRONQUITO_YELLOW);
+  tft.fillCircle(110, 111, 14, POLLO_OJO_ARO);
   tft.fillCircle(110, 111, 11, POLLO_OJO);
   tft.fillCircle(113, 107, 4, COLOR_FONDO);
-  tft.fillTriangle(155, 101, 190, 128, 157, 128, POLLO_PICO_CLARO); // Pico
+  tft.fillTriangle(155, 101, 190, 128, 157, 128, POLLO_PICO_CLARO);
   tft.fillTriangle(157, 127, 190, 128, 155, 141, POLLO_PICO_OSCURO);
 
-  // Botón CONECTAR (abajo a la izquierda) y, al lado, el circulito de estado
   dibujarBoton(15, 265, 120, 40, "Conectar", BRONQUITO_CYAN);
   tft.drawRoundRect(15, 265, 120, 40, 6, COLOR_FONDO);
   dibujarIndicadorConexion(163, 285);
 
-  // Título centrado a la tarjeta (X = 332)
   tft.setTextDatum(TC_DATUM);
   tft.setTextColor(BRONQUITO_CYAN, COLOR_FONDO);
   tft.setTextSize(4);
   escribir("BRONQUITO", 332, 50);
 
-  // Tarjeta de Login
   tft.drawRoundRect(200, 125, 265, 180, 12, BRONQUITO_CYAN);
   tft.drawRoundRect(201, 126, 263, 178, 11, BRONQUITO_CYAN);
 
   tft.setTextSize(2);
   escribir("Iniciar sesión", 332, 142);
 
-  // Campo DNI de Usuario
   tft.fillRoundRect(215, 175, 235, 38, 6, COLOR_CAMPO_BG);
   tft.drawRoundRect(215, 175, 235, 38, 6, BRONQUITO_CYAN);
   tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_CAMPO_BG);
@@ -138,7 +127,6 @@ void BronquitoUI::drawLoginScreen() {
   if (textoUsuario.length() > 18) textoUsuario = textoUsuario.substring(0, 17) + ".";
   escribir(textoUsuario, 332, 186);
 
-  // Botón INGRESAR
   tft.fillRoundRect(215, 230, 235, 48, 8, BRONQUITO_CYAN);
   tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
   escribir("Ingresar", 332, 245);
@@ -146,7 +134,6 @@ void BronquitoUI::drawLoginScreen() {
   tft.setTextDatum(TL_DATUM);
 }
 
-// --- DIBUJO DE PANTALLA 2: PIN ---
 void BronquitoUI::updatePinDisplay() {
   int boxW = 30, boxH = 35, gap = 12, boxY = 52;
   int totalW = 4 * boxW + 3 * gap;
@@ -166,7 +153,6 @@ void BronquitoUI::updatePinDisplay() {
 void BronquitoUI::drawPinScreen() {
   tft.fillScreen(COLOR_FONDO);
 
-  // Botón Volver "<"
   tft.drawRoundRect(12, 12, 44, 36, 6, BRONQUITO_ORANGE);
   tft.setTextDatum(MC_DATUM);
   tft.setTextColor(BRONQUITO_ORANGE, COLOR_FONDO);
@@ -180,7 +166,6 @@ void BronquitoUI::drawPinScreen() {
 
   updatePinDisplay();
 
-  // Teclado Numérico
   const char* keys[4][3] = {
     {"1", "2", "3"},
     {"4", "5", "6"},
@@ -208,20 +193,16 @@ void BronquitoUI::drawPinScreen() {
   tft.setTextDatum(TL_DATUM);
 }
 
-// --- DIBUJO DE PANTALLA 3: MENÚ PRINCIPAL ---
 void BronquitoUI::drawMainMenu() {
   tft.fillScreen(COLOR_FONDO);
 
-  // Encabezado superior
   tft.fillRect(0, 0, 480, 45, BRONQUITO_CYAN);
 
-  // Título del encabezado
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
   tft.setTextSize(2);
   escribir("Menú principal", 15, 23);
 
-  // Botón Cerrar sesión
   tft.fillRoundRect(320, 6, 148, 33, 6, BRONQUITO_ORANGE);
   tft.drawRoundRect(320, 6, 148, 33, 6, COLOR_FONDO);
   tft.setTextDatum(MC_DATUM);
@@ -229,7 +210,6 @@ void BronquitoUI::drawMainMenu() {
   tft.setTextSize(1);
   escribir("Cerrar sesión", 394, 22);
 
-  // Circulito de estado y botón CONECTAR (junto a Cerrar sesión)
   dibujarIndicadorConexion(203, 23);
   tft.fillRoundRect(224, 6, 90, 33, 6, COLOR_FONDO);
   tft.setTextDatum(MC_DATUM);
@@ -237,8 +217,6 @@ void BronquitoUI::drawMainMenu() {
   tft.setTextSize(1);
   escribir("Conectar", 269, 22);
 
-
-  // --- CUADRÍCULA DE 4 BOTONES (2x2) ---
   // 1. Botón Entrenamiento
   tft.fillRoundRect(25, 60, 205, 110, 10, COLOR_TARJETA_BG);
   tft.drawRoundRect(25, 60, 205, 110, 10, BRONQUITO_CYAN);
@@ -274,8 +252,136 @@ void BronquitoUI::drawMainMenu() {
   tft.setTextDatum(TL_DATUM);
 }
 
-// Circulito de estado: verde = WiFi + compu, amarillo = solo WiFi, rojo = sin WiFi.
-// Con aro blanco y borde, así se ve sobre el pato amarillo y sobre el encabezado cyan.
+void BronquitoUI::drawCalibMenu() {
+  tft.fillScreen(COLOR_FONDO);
+
+  tft.fillRect(0, 0, 480, 45, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir("Calibración de Sensores", 15, 23);
+
+  // Botón único: recorrido guiado PIM + Espirometría
+  tft.fillRoundRect(25, 65, 430, 135, 12, COLOR_TARJETA_BG);
+  tft.drawRoundRect(25, 65, 430, 135, 12, BRONQUITO_CYAN);
+  tft.drawRoundRect(26, 66, 428, 133, 11, BRONQUITO_CYAN);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(BRONQUITO_CYAN, COLOR_TARJETA_BG);
+  tft.setTextSize(3);
+  escribir("Calibrar", 240, 105);
+  tft.setTextSize(2);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_TARJETA_BG);
+  escribir("PIM + Espirometría", 240, 143);
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_TARJETA_BG);
+  escribir("Dos maniobras guiadas, una a continuación de la otra", 240, 175);
+
+  dibujarBoton(90, 245, 300, 50, "Volver", COLOR_TEXTO_GRIS);
+  tft.setTextDatum(TL_DATUM);
+}
+
+void BronquitoUI::drawCalibPimInstructions() {
+  tft.fillScreen(COLOR_FONDO);
+
+  tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir("Calibración: PIM", 15, 20);
+
+  tft.fillRoundRect(20, 52, 440, 180, 10, COLOR_TARJETA_BG);
+  tft.drawRoundRect(20, 52, 440, 180, 10, BRONQUITO_CYAN);
+
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_TARJETA_BG);
+  tft.setTextSize(2);
+  escribir("Instrucciones:", 35, 65);
+
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_TARJETA_BG);
+  tft.setTextSize(2);
+  escribir("1. Ocluía la boquilla.", 35, 98);
+  escribir("2. Exhalá todo el aire.", 35, 128);
+  escribir("3. Inhalá con la máxima fuerza", 35, 158);
+  escribir("   sostenida durante 3 segundos.", 35, 188);
+
+  dibujarBoton(20, 248, 180, 55, "Volver", COLOR_TEXTO_GRIS);
+  dibujarBoton(220, 248, 240, 55, "COMENZAR MEDICIÓN", COLOR_VERDE_OK, 2);
+
+  tft.setTextDatum(TL_DATUM);
+}
+
+void BronquitoUI::drawCalibEspInstructions() {
+  tft.fillScreen(COLOR_FONDO);
+
+  tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir("Calibración: Espirometría", 15, 20);
+
+  tft.fillRoundRect(20, 52, 440, 180, 10, COLOR_TARJETA_BG);
+  tft.drawRoundRect(20, 52, 440, 180, 10, BRONQUITO_CYAN);
+
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_TARJETA_BG);
+  tft.setTextSize(2);
+  escribir("Instrucciones:", 35, 65);
+
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_TARJETA_BG);
+  tft.setTextSize(2);
+  escribir("1. Inhalá al máximo fuera.", 35, 98);
+  escribir("2. Colocá la boquilla.", 35, 128);
+  escribir("3. Exhalá con máxima fuerza (6s).", 35, 158);
+  escribir("4. Inhalá rápido y completo.", 35, 188);
+
+  dibujarBoton(20, 248, 180, 55, "Volver", COLOR_TEXTO_GRIS);
+  dibujarBoton(220, 248, 240, 55, "COMENZAR MEDICIÓN", COLOR_VERDE_OK, 2);
+
+  tft.setTextDatum(TL_DATUM);
+}
+
+void BronquitoUI::drawCalibEspRunning() {
+  cancelArmado = false;
+  hasDot = false;
+  tft.fillScreen(COLOR_FONDO);
+
+  tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir("Midiendo Espirometría...", 15, 20);
+
+  tft.fillRoundRect(30, 55, 420, 175, 10, COLOR_CAMPO_BG);
+  tft.drawRoundRect(30, 55, 420, 175, 10, BRONQUITO_CYAN);
+
+  updateCalibEspProgress(0.0f, 0.0f, 0.0f);
+
+  dibujarBoton(120, 245, 240, 50, "Cancelar", COLOR_ROJO_DEL);
+  tft.setTextDatum(TL_DATUM);
+}
+
+void BronquitoUI::updateCalibEspProgress(float flujoLmin, float volumenL, float tiempoSec) {
+  // Se borra solo el renglón de cada texto (padding) en vez de toda la tarjeta:
+  // redibujar 400x155 px a 24 bits tarda decenas de ms y atrasaría el muestreo de 100 Hz
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextPadding(400);
+
+  tft.setTextColor(BRONQUITO_CYAN, COLOR_CAMPO_BG);
+  tft.setTextSize(4);
+  escribir(String(flujoLmin, 1) + " L/min", 240, 95);
+
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
+  tft.setTextSize(3);
+  escribir("Vol: " + String(volumenL, 2) + " L", 240, 145);
+
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_CAMPO_BG);
+  tft.setTextSize(2);
+  escribir("Tiempo: " + String(tiempoSec, 1) + " s", 240, 185);
+
+  tft.setTextPadding(0);
+  tft.setTextDatum(TL_DATUM);
+}
+
 void BronquitoUI::dibujarIndicadorConexion(int cx, int cy) {
   uint16_t color = estadoCon == CON_WIFI_Y_COMPU ? COLOR_VERDE_OK
                  : estadoCon == CON_SOLO_WIFI    ? 0xFE60
@@ -285,7 +391,6 @@ void BronquitoUI::dibujarIndicadorConexion(int cx, int cy) {
   tft.drawCircle(cx, cy, 14, BRONQUITO_BROWN);
 }
 
-// --- FEEDBACKS VISUALES ---
 void BronquitoUI::showSyncFeedback() {
   tft.fillRoundRect(15, 265, 120, 40, 6, BRONQUITO_ORANGE);
   tft.setTextDatum(MC_DATUM);
@@ -336,7 +441,6 @@ void BronquitoUI::showErrorMessage(String title, String message) {
   tft.setTextDatum(TL_DATUM);
 }
 
-// --- PROCESAMIENTO TÁCTIL Y GENERACIÓN DE EVENTOS ---
 UIEvent BronquitoUI::checkTouch(SystemState currentState) {
   bool currentTouchState = touch.touched();
   UIEvent detectedEvent = EVENT_NONE;
@@ -408,6 +512,18 @@ UIEvent BronquitoUI::checkTouch(SystemState currentState) {
       } else if (x >= 250 && x <= 455 && y >= 185 && y <= 295) {
         detectedEvent = EVENT_SELECT_HISTORY;
       }
+    } else if (currentState == STATE_CALIB_MENU) {
+      if (x >= 25 && x <= 455 && y >= 65 && y <= 200) {
+        detectedEvent = EVENT_CALIB_START;
+      } else if (x >= 90 && x <= 390 && y >= 245 && y <= 295) {
+        detectedEvent = EVENT_CALIB_BACK_TO_MENU;
+      }
+    } else if (currentState == STATE_CALIB_PIM_INSTR || currentState == STATE_CALIB_ESP_INSTR) {
+      if (x >= 20 && x <= 200 && y >= 248 && y <= 303) {
+        detectedEvent = EVENT_CALIB_BACK_TO_MENU;
+      } else if (x >= 220 && x <= 460 && y >= 248 && y <= 303) {
+        detectedEvent = EVENT_CALIB_START;
+      }
     }
     drawTouchDot(x, y);
   }
@@ -417,24 +533,19 @@ UIEvent BronquitoUI::checkTouch(SystemState currentState) {
   return detectedEvent;
 }
 
-// ============================================================================
-// TECLADO EN PANTALLA
-// ============================================================================
 static bool dentro(int px, int py, int x, int y, int w, int h) {
   return px >= x && px <= x + w && py >= y && py <= y + h;
 }
 
-// 3 capas: 0 minúsculas, 1 mayúsculas, 2 símbolos
 static const char *CAPAS[3][4] = {
   {"1234567890", "qwertyuiop", "asdfghjkl", "zxcvbnm"},
   {"1234567890", "QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"},
   {"!@#$%^&*()", "-_=+[]{}|\\", ":;\"',/?<>", "~`.,?!/"}
 };
-static const int KW = 44, KH = 40, PASO_X = 46;     // ancho, alto, separación
-static const int FILA_Y0 = 80, FILA_PASO = 44;      // la fila r está en y = 80 + r*44
-static const int FILA_X[4] = {10, 10, 33, 74};      // x inicial de cada fila
+static const int KW = 44, KH = 40, PASO_X = 46;
+static const int FILA_Y0 = 80, FILA_PASO = 44;
+static const int FILA_X[4] = {10, 10, 33, 74};
 
-// true UNA sola vez por cada toque nuevo, con las coordenadas ya mapeadas
 bool BronquitoUI::leerToque(int &x, int &y) {
   bool ahora = touch.touched();
   bool nuevo = ahora && !lastTouchState;
@@ -463,7 +574,7 @@ void BronquitoUI::dibujarCampoTexto(const String &texto) {
   tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
   tft.setTextSize(2);
   String vista = texto;
-  if (vista.length() > 36) vista = vista.substring(vista.length() - 36);   // últimos 36
+  if (vista.length() > 36) vista = vista.substring(vista.length() - 36);
   escribir(vista + "_", 18, 53);
 }
 
@@ -484,9 +595,8 @@ void BronquitoUI::dibujarTeclado(int capa) {
   dibujarBoton(402, y4, 68, KH, "OK", COLOR_VERDE_OK);
 }
 
-// Devuelve el texto escrito, o "" si se toca VOLVER (OK con el campo vacío no hace nada)
 String BronquitoUI::pedirTexto(const String &titulo, String texto) {
-  hasDot = false;      // el punto rojo de depuración queda tapado por el teclado
+  hasDot = false;
   int capa = 0;
 
   tft.fillScreen(COLOR_FONDO);
@@ -505,27 +615,24 @@ String BronquitoUI::pedirTexto(const String &titulo, String texto) {
     if (!leerToque(x, y)) continue;
     int capaAntes = capa;
 
-    // VOLVER: cancela y devuelve vacío al instante
     if (dentro(x, y, 380, 4, 90, 28)) { tft.setTextDatum(TL_DATUM); return ""; }
 
-    // 1) teclas de caracteres
     for (int r = 0; r < 4; r++) {
       if (!dentro(x, y, 0, FILA_Y0 + r * FILA_PASO, 480, KH)) continue;
       const char *fila = CAPAS[capa][r];
       for (int i = 0; fila[i]; i++) {
         if (dentro(x, y, FILA_X[r] + i * PASO_X, 0, KW, 480) && texto.length() < 63) {
           texto += fila[i];
-          if (capa == 1) capa = 0;     // la mayúscula vale para una sola letra
+          if (capa == 1) capa = 0;
         }
       }
     }
-    // 2) teclas especiales
-    if (dentro(x, y, 10, y3, 60, KH))        capa = (capa == 1) ? 0 : 1;      // Aa
+    if (dentro(x, y, 10, y3, 60, KH))        capa = (capa == 1) ? 0 : 1;
     else if (dentro(x, y, 400, y3, 70, KH))  { if (texto.length()) texto.remove(texto.length() - 1); }
-    else if (dentro(x, y, 10, y4, 70, KH))   capa = (capa == 2) ? 0 : 2;      // 123 / abc
+    else if (dentro(x, y, 10, y4, 70, KH))   capa = (capa == 2) ? 0 : 2;
     else if (dentro(x, y, 84, y4, 250, KH))  { if (texto.length() < 63) texto += ' '; }
     else if (dentro(x, y, 338, y4, 60, KH))  { if (texto.length() < 63) texto += '.'; }
-    else if (dentro(x, y, 402, y4, 68, KH))  {                                // OK
+    else if (dentro(x, y, 402, y4, 68, KH))  {
       if (texto.length() > 0) { tft.setTextDatum(TL_DATUM); return texto; }
     }
 
@@ -623,18 +730,18 @@ String BronquitoUI::pedirCodigo(const String *lineas, int nLineas, const String 
     int x, y;
     if (!leerToque(x, y)) continue;
 
-    if (dentro(x, y, 10, 266, 75, 40)) {          // VOLVER
+    if (dentro(x, y, 10, 266, 75, 40)) {
       tft.setTextDatum(TL_DATUM);
       return "";
     }
     for (int r = 0; r < 4; r++) {
       for (int c = 0; c < 3; c++) {
         if (!dentro(x, y, 95 + c * 100, 134 + r * 44, 90, 40)) continue;
-        if (r < 3 || c == 1) {                    // dígitos
+        if (r < 3 || c == 1) {
           if (digitos.length() < 3) digitos += teclas[r][c];
-        } else if (c == 0) {                      // borrar
+        } else if (c == 0) {
           if (digitos.length() > 0) digitos.remove(digitos.length() - 1);
-        } else if (digitos.length() > 0) {        // OK
+        } else if (digitos.length() > 0) {
           tft.setTextDatum(TL_DATUM);
           return digitos;
         }
@@ -644,8 +751,6 @@ String BronquitoUI::pedirCodigo(const String *lineas, int nLineas, const String 
   }
 }
 
-// Menú del botón de conexión. Devuelve:
-// 2 = sincronizar, 0 = cambiar red, 1 = cambiar compu, -1 = volver
 int BronquitoUI::elegirConexion(const String& ssid) {
   hasDot = false;
   tft.fillScreen(COLOR_FONDO);
@@ -673,7 +778,6 @@ int BronquitoUI::elegirConexion(const String& ssid) {
   }
 }
 
-// Pantalla de confirmación: devuelve true si se toca ACEPTAR, false si RECHAZAR
 bool BronquitoUI::pedirConfirmacion(const String &titulo, const String &l1, const String &l2) {
   hasDot = false;
   tft.fillScreen(COLOR_FONDO);
@@ -697,7 +801,6 @@ bool BronquitoUI::pedirConfirmacion(const String &titulo, const String &l1, cons
   }
 }
 
-// Teclado numérico para el PIN (4 dígitos, se muestra con asteriscos). "" si se toca VOLVER.
 String BronquitoUI::pedirPin(const String &titulo, const String &subtitulo) {
   hasDot = false;
   String pin = "";
@@ -737,15 +840,15 @@ String BronquitoUI::pedirPin(const String &titulo, const String &subtitulo) {
     int x, y;
     if (!leerToque(x, y)) continue;
 
-    if (dentro(x, y, 10, 266, 75, 40)) { tft.setTextDatum(TL_DATUM); return ""; }   // VOLVER
+    if (dentro(x, y, 10, 266, 75, 40)) { tft.setTextDatum(TL_DATUM); return ""; }
     for (int r = 0; r < 4; r++) {
       for (int c = 0; c < 3; c++) {
         if (!dentro(x, y, 95 + c * 100, 134 + r * 44, 90, 40)) continue;
-        if (r < 3 || c == 1) {                        // dígitos
+        if (r < 3 || c == 1) {
           if (pin.length() < 4) pin += teclas[r][c];
-        } else if (c == 0) {                          // borrar
+        } else if (c == 0) {
           if (pin.length() > 0) pin.remove(pin.length() - 1);
-        } else if (pin.length() == 4) {               // OK solo con los 4 dígitos
+        } else if (pin.length() == 4) {
           tft.setTextDatum(TL_DATUM);
           return pin;
         }
@@ -755,12 +858,10 @@ String BronquitoUI::pedirPin(const String &titulo, const String &subtitulo) {
   }
 }
 
-// Pantalla de CONFIGURACIÓN: frecuencia recomendada y los días resaltados. Vuelve al tocar VOLVER.
 void BronquitoUI::mostrarFrecuencia(int sesiones, const bool *dias, const String &vigenteDesde, bool recienActualizada) {
   hasDot = false;
   tft.fillScreen(COLOR_FONDO);
 
-  // Encabezado (como el menú principal)
   tft.fillRect(0, 0, 480, 45, BRONQUITO_CYAN);
   tft.setTextDatum(ML_DATUM);
   tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
@@ -780,7 +881,6 @@ void BronquitoUI::mostrarFrecuencia(int sesiones, const bool *dias, const String
     tft.setTextSize(3);
     escribir(String(sesiones) + (sesiones == 1 ? " vez" : " veces") + " por semana", 240, 108);
 
-    // Los 7 días; los recomendados en cyan
     static const char *DIAS[7] = {"Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"};
     tft.setTextSize(2);
     for (int i = 0; i < 7; i++) {
@@ -791,7 +891,6 @@ void BronquitoUI::mostrarFrecuencia(int sesiones, const bool *dias, const String
       escribir(DIAS[i], x + 25, 163);
     }
 
-    // "2026-10-13" -> "13/10/2026"
     String fecha = vigenteDesde;
     if (fecha.length() == 10)
       fecha = fecha.substring(8, 10) + "/" + fecha.substring(5, 7) + "/" + fecha.substring(0, 4);
@@ -818,7 +917,6 @@ void BronquitoUI::mostrarFrecuencia(int sesiones, const bool *dias, const String
   }
 }
 
-// Pantalla del circulito de estado: qué está conectado y qué no. Vuelve al tocar Volver.
 void BronquitoUI::mostrarEstadoConexion(const String &ssid, const String &ipCompu) {
   hasDot = false;
   tft.fillScreen(COLOR_FONDO);
@@ -829,7 +927,6 @@ void BronquitoUI::mostrarEstadoConexion(const String &ssid, const String &ipComp
   tft.setTextSize(2);
   escribir("Estado de la conexión", 15, 23);
 
-  // Resumen, con el mismo circulito que se tocó
   dibujarIndicadorConexion(40, 78);
   tft.setTextColor(BRONQUITO_BROWN, COLOR_FONDO);
   escribir(estadoCon == CON_WIFI_Y_COMPU ? "Todo conectado"
@@ -859,5 +956,427 @@ void BronquitoUI::mostrarEstadoConexion(const String &ssid, const String &ipComp
     int x, y;
     if (!leerToque(x, y)) continue;
     if (dentro(x, y, 90, 258, 300, 46)) return;
+  }
+}
+
+// ======================= HISTORIAL =======================
+
+int BronquitoUI::mostrarHistorial() {
+  hasDot = false;
+  tft.fillScreen(COLOR_FONDO);
+
+  tft.fillRect(0, 0, 480, 45, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir("Historial", 15, 23);
+
+  // Botón Calibraciones
+  tft.fillRoundRect(25, 65, 205, 135, 12, COLOR_TARJETA_BG);
+  tft.drawRoundRect(25, 65, 205, 135, 12, BRONQUITO_CYAN);
+  tft.drawRoundRect(26, 66, 203, 133, 11, BRONQUITO_CYAN);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(BRONQUITO_CYAN, COLOR_TARJETA_BG);
+  tft.setTextSize(2);
+  escribir("Calibraciones", 127, 120);
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_TARJETA_BG);
+  escribir("PIM y Espirometría", 127, 155);
+
+  // Botón Entrenamientos
+  tft.fillRoundRect(250, 65, 205, 135, 12, COLOR_TARJETA_BG);
+  tft.drawRoundRect(250, 65, 205, 135, 12, BRONQUITO_CYAN);
+  tft.drawRoundRect(251, 66, 203, 133, 11, BRONQUITO_CYAN);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(BRONQUITO_CYAN, COLOR_TARJETA_BG);
+  tft.setTextSize(2);
+  escribir("Entrenamientos", 352, 120);
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_TARJETA_BG);
+  escribir("Sesiones realizadas", 352, 155);
+
+  dibujarBoton(70, 245, 340, 50, "Volver al menú principal", COLOR_TEXTO_GRIS);
+  tft.setTextDatum(TL_DATUM);
+
+  while (true) {
+    int x, y;
+    if (!leerToque(x, y)) continue;
+    if (dentro(x, y, 25, 65, 205, 135))  return 0;
+    if (dentro(x, y, 250, 65, 205, 135)) return 1;
+    if (dentro(x, y, 70, 245, 340, 50))  return -1;
+  }
+}
+
+int BronquitoUI::elegirCalibracion(const String *fechas, const String *tipos, int n) {
+  hasDot = false;
+  const int POR_PAG = 5;
+  const int FILA_Y = 60, FILA_H = 36, FILA_P = 40;
+  int paginas = (n + POR_PAG - 1) / POR_PAG;
+  if (paginas < 1) paginas = 1;
+  int pag = 0;
+
+  tft.fillScreen(COLOR_FONDO);
+  tft.fillRect(0, 0, 480, 45, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir("Calibraciones guardadas", 15, 23);
+
+  auto dibujarPagina = [&]() {
+    tft.fillRect(0, 46, 480, 274, COLOR_FONDO);
+    tft.setTextDatum(ML_DATUM);
+
+    if (n == 0) {
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextSize(2);
+      tft.setTextColor(BRONQUITO_BROWN, COLOR_FONDO);
+      escribir("No hay calibraciones", 240, 120);
+      tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+      escribir("guardadas todavía", 240, 150);
+    } else {
+      tft.setTextSize(1);
+      tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+      escribir("FECHA", 20, 53);
+      escribir("TIPO", 225, 53);
+
+      for (int i = 0; i < POR_PAG; i++) {
+        int idx = pag * POR_PAG + i;
+        if (idx >= n) break;
+        int y = FILA_Y + i * FILA_P;
+
+        tft.fillRoundRect(10, y, 460, FILA_H, 6, COLOR_CAMPO_BG);
+        tft.setTextDatum(ML_DATUM);
+        tft.setTextSize(2);
+        tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
+        escribir(fechas[idx], 20, y + FILA_H / 2);
+        tft.setTextColor(BRONQUITO_CYAN, COLOR_CAMPO_BG);
+        escribir(tipos[idx], 225, y + FILA_H / 2);
+        dibujarBoton(385, y + 3, 75, FILA_H - 6, "Ver", BRONQUITO_CYAN);
+      }
+    }
+
+    dibujarBoton(10, 266, 150, 40, "Volver", COLOR_TEXTO_GRIS);
+    if (paginas > 1) {
+      dibujarBoton(250, 266, 50, 40, "<", pag > 0 ? BRONQUITO_CYAN : COLOR_TEXTO_GRIS);
+      dibujarBoton(380, 266, 50, 40, ">", pag < paginas - 1 ? BRONQUITO_CYAN : COLOR_TEXTO_GRIS);
+      tft.setTextDatum(MC_DATUM);
+      tft.setTextSize(2);
+      tft.setTextColor(BRONQUITO_BROWN, COLOR_FONDO);
+      escribir(String(pag + 1) + "/" + String(paginas), 340, 286);
+    }
+    tft.setTextDatum(TL_DATUM);
+  };
+  dibujarPagina();
+
+  while (true) {
+    int x, y;
+    if (!leerToque(x, y)) continue;
+
+    if (dentro(x, y, 10, 266, 150, 40)) return -1;
+
+    if (paginas > 1) {
+      if (dentro(x, y, 250, 266, 50, 40) && pag > 0)            { pag--; dibujarPagina(); continue; }
+      if (dentro(x, y, 380, 266, 50, 40) && pag < paginas - 1)  { pag++; dibujarPagina(); continue; }
+    }
+
+    for (int i = 0; i < POR_PAG; i++) {
+      int idx = pag * POR_PAG + i;
+      if (idx >= n) break;
+      if (dentro(x, y, 375, FILA_Y + i * FILA_P, 95, FILA_H)) return idx;
+    }
+  }
+}
+
+int BronquitoUI::mostrarResumenCalibracion(const String &titulo, const String &fecha, const MetricaItem *m, int n, const String &pie) {
+  hasDot = false;
+  if (n > 6) n = 6;
+
+  tft.fillScreen(COLOR_FONDO);
+  tft.fillRect(0, 0, 480, 45, BRONQUITO_CYAN);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  tft.setTextDatum(ML_DATUM);
+  escribir(titulo, 15, 23);
+  tft.setTextDatum(MR_DATUM);
+  escribir(fecha, 465, 23);
+
+  const int TW = 215, TH = 62;
+  for (int i = 0; i < n; i++) {
+    int x = (i % 2 == 0) ? 15 : 250;
+    int y = 54 + (i / 2) * 68;
+
+    tft.fillRoundRect(x, y, TW, TH, 8, COLOR_TARJETA_BG);
+    tft.drawRoundRect(x, y, TW, TH, 8, BRONQUITO_CYAN);
+
+    tft.setTextDatum(TL_DATUM);
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_TARJETA_BG);
+    escribir(m[i].etiqueta, x + 12, y + 8);
+
+    tft.setTextSize(3);
+    tft.setTextColor(BRONQUITO_CYAN, COLOR_TARJETA_BG);
+    escribir(m[i].valor, x + 12, y + 28);
+    int w = tft.textWidth(paraPantalla(m[i].valor));
+
+    tft.setTextSize(2);
+    tft.setTextColor(BRONQUITO_BROWN, COLOR_TARJETA_BG);
+    escribir(m[i].unidad, x + 12 + w + 6, y + 36);
+  }
+
+  // Botones abajo; con "pie" (condiciones ambientales) quedan a la izquierda
+  int vx = 60, vw = 170, gx = 250, gw = 170;
+  if (pie.length() > 0) {
+    vx = 15; vw = 130; gx = 153; gw = 150;
+    int k = pie.indexOf(" | ");
+    String l1 = (k < 0) ? pie : pie.substring(0, k);
+    String l2 = (k < 0) ? String("") : pie.substring(k + 3);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+    escribir(l1, 395, 272);
+    escribir(l2, 395, 290);
+  }
+  dibujarBoton(vx, 258, vw, 46, "Volver", COLOR_TEXTO_GRIS);
+  dibujarBoton(gx, 258, gw, 46, "Graficar", BRONQUITO_CYAN);
+  tft.setTextDatum(TL_DATUM);
+
+  while (true) {
+    int x, y;
+    if (!leerToque(x, y)) continue;
+    if (dentro(x, y, vx, 258, vw, 46)) return 0;
+    if (dentro(x, y, gx, 258, gw, 46)) return 1;
+  }
+}
+
+// ======================= GRÁFICOS =======================
+
+// Paso "redondo" (1, 2 o 5 x 10^k) para que el eje tenga ~objetivo divisiones
+static float pasoBonito(float rango, int objetivo) {
+  if (rango <= 0) return 1.0f;
+  float crudo = rango / objetivo;
+  float mag = powf(10.0f, floorf(log10f(crudo)));
+  float r = crudo / mag;
+  float f = r < 1.5f ? 1.0f : r < 3.5f ? 2.0f : r < 7.5f ? 5.0f : 10.0f;
+  return f * mag;
+}
+
+int BronquitoUI::mostrarGrafico(const String &titulo, const String &etiquetaX, const String &etiquetaY,
+                                const float *x, const float *y, int n, const String &botonAlt) {
+  hasDot = false;
+  const int PX = 50, PY = 54, PW = 415, PH = 186;
+  const uint16_t COLOR_GRILLA = 0xDEFB;
+
+  tft.fillScreen(COLOR_FONDO);
+  tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir(titulo, 15, 20);
+
+  tft.setTextSize(1);
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_FONDO);
+  escribir(etiquetaY, PX, 43);
+  tft.setTextDatum(TC_DATUM);
+  escribir(etiquetaX, PX + PW / 2, 258);
+
+  if (n < 2) {
+    tft.drawRect(PX, PY, PW, PH, COLOR_TEXTO_GRIS);
+    tft.setTextDatum(MC_DATUM);
+    tft.setTextSize(2);
+    tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+    escribir("Sin datos para graficar", PX + PW / 2, PY + PH / 2);
+  } else {
+    // Rangos (siempre incluyen el cero)
+    float xmin = 0, xmax = 0, ymin = 0, ymax = 0;
+    for (int i = 0; i < n; i++) {
+      if (x[i] < xmin) xmin = x[i];
+      if (x[i] > xmax) xmax = x[i];
+      if (y[i] < ymin) ymin = y[i];
+      if (y[i] > ymax) ymax = y[i];
+    }
+    if (xmax - xmin < 1e-6f) xmax = xmin + 1.0f;
+    if (ymax - ymin < 1e-6f) ymax = ymin + 1.0f;
+
+    float pasoX = pasoBonito(xmax - xmin, 6);
+    float pasoY = pasoBonito(ymax - ymin, 5);
+    xmin = floorf(xmin / pasoX) * pasoX;  xmax = ceilf(xmax / pasoX) * pasoX;
+    ymin = floorf(ymin / pasoY) * pasoY;  ymax = ceilf(ymax / pasoY) * pasoY;
+
+    auto mapX = [&](float v) { return PX + (int)((v - xmin) / (xmax - xmin) * PW + 0.5f); };
+    auto mapY = [&](float v) { return PY + PH - (int)((v - ymin) / (ymax - ymin) * PH + 0.5f); };
+    int decX = pasoX >= 1.0f ? 0 : (pasoX >= 0.1f ? 1 : 2);
+    int decY = pasoY >= 1.0f ? 0 : (pasoY >= 0.1f ? 1 : 2);
+
+    tft.setTextSize(1);
+    tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+
+    // Grilla + números de los ejes
+    int nx = (int)((xmax - xmin) / pasoX + 0.5f);
+    for (int i = 0; i <= nx; i++) {
+      float v = xmin + i * pasoX;
+      if (fabsf(v) < pasoX * 0.001f) v = 0;
+      int sx = mapX(v);
+      tft.drawFastVLine(sx, PY, PH, COLOR_GRILLA);
+      tft.setTextDatum(TC_DATUM);
+      escribir(String(v, decX), constrain(sx, PX, PX + PW), PY + PH + 4);
+    }
+    int ny = (int)((ymax - ymin) / pasoY + 0.5f);
+    for (int i = 0; i <= ny; i++) {
+      float v = ymin + i * pasoY;
+      if (fabsf(v) < pasoY * 0.001f) v = 0;
+      int sy = mapY(v);
+      tft.drawFastHLine(PX, sy, PW, COLOR_GRILLA);
+      tft.setTextDatum(MR_DATUM);
+      escribir(String(v, decY), PX - 4, sy);
+    }
+
+    // Ejes en cero (si el cero queda dentro del gráfico)
+    if (ymin < 0) tft.drawFastHLine(PX, mapY(0), PW, COLOR_TEXTO_GRIS);
+    if (xmin < 0) tft.drawFastVLine(mapX(0), PY, PH, COLOR_TEXTO_GRIS);
+
+    // Señal
+    int px0 = constrain(mapX(x[0]), PX, PX + PW);
+    int py0 = constrain(mapY(y[0]), PY, PY + PH);
+    for (int i = 1; i < n; i++) {
+      int px1 = constrain(mapX(x[i]), PX, PX + PW);
+      int py1 = constrain(mapY(y[i]), PY, PY + PH);
+      if (px1 == px0 && py1 == py0) continue;
+      tft.drawLine(px0, py0, px1, py1, BRONQUITO_CYAN);
+      tft.drawLine(px0 + 1, py0, px1 + 1, py1, BRONQUITO_CYAN);
+      tft.drawLine(px0, py0 + 1, px1, py1 + 1, BRONQUITO_CYAN);
+      px0 = px1; py0 = py1;
+    }
+    tft.drawRect(PX, PY, PW, PH, COLOR_TEXTO_GRIS);
+  }
+
+  dibujarBoton(10, 274, 150, 40, "Volver", COLOR_TEXTO_GRIS);
+  if (botonAlt.length() > 0) dibujarBoton(170, 274, 300, 40, botonAlt, BRONQUITO_CYAN);
+  tft.setTextDatum(TL_DATUM);
+
+  while (true) {
+    int tx, ty;
+    if (!leerToque(tx, ty)) continue;
+    if (dentro(tx, ty, 10, 274, 150, 40)) return 0;
+    if (botonAlt.length() > 0 && dentro(tx, ty, 170, 274, 300, 40)) return 1;
+  }
+}
+
+// ======================= CALIBRACIÓN GUIADA =======================
+
+void BronquitoUI::drawCalibPimRunning() {
+  cancelArmado = false;
+  hasDot = false;
+  tft.fillScreen(COLOR_FONDO);
+
+  tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir("Midiendo PIM...", 15, 20);
+
+  tft.fillRoundRect(30, 55, 420, 175, 10, COLOR_CAMPO_BG);
+  tft.drawRoundRect(30, 55, 420, 175, 10, BRONQUITO_CYAN);
+
+  updateCalibPimProgress(0.0f, 0.0f);
+
+  dibujarBoton(120, 245, 240, 50, "Cancelar", COLOR_ROJO_DEL);
+  tft.setTextDatum(TL_DATUM);
+}
+
+void BronquitoUI::updateCalibPimProgress(float presionCmH2O, float tiempoSec) {
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextPadding(400);
+
+  tft.setTextColor(BRONQUITO_CYAN, COLOR_CAMPO_BG);
+  tft.setTextSize(4);
+  escribir(String(presionCmH2O, 1) + " cmH2O", 240, 110);
+
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_CAMPO_BG);
+  tft.setTextSize(2);
+  escribir("Tiempo: " + String(tiempoSec, 1) + " s", 240, 170);
+
+  tft.setTextPadding(0);
+  tft.setTextDatum(TL_DATUM);
+}
+
+bool BronquitoUI::cancelarTocado() {
+  if (!touch.touched()) {
+    cancelArmado = true;
+    return false;
+  }
+  if (!cancelArmado) return false;
+
+  TS_Point p = touch.getPoint();
+  int x = constrain(map(p.x, 300, 3800, 0, 480), 0, 479);
+  int y = constrain(map(p.y, 300, 3800, 0, 319), 0, 319);
+  return dentro(x, y, 120, 245, 240, 50);
+}
+
+bool BronquitoUI::mostrarPasoCalibracion(const String &titulo, const String &subtitulo, const String *lineas, int n,
+                                         const String &textoBoton, uint16_t colorBoton) {
+  hasDot = false;
+  if (n > 4) n = 4;
+
+  tft.fillScreen(COLOR_FONDO);
+  tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir(titulo, 15, 20);
+
+  tft.fillRoundRect(20, 52, 440, 180, 10, COLOR_TARJETA_BG);
+  tft.drawRoundRect(20, 52, 440, 180, 10, BRONQUITO_CYAN);
+
+  tft.setTextDatum(TL_DATUM);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_TARJETA_BG);
+  tft.setTextSize(2);
+  escribir(subtitulo, 35, 65);
+
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_TARJETA_BG);
+  for (int i = 0; i < n; i++) escribir(lineas[i], 35, 98 + i * 30);
+
+  dibujarBoton(20, 248, 180, 55, "Cancelar", COLOR_TEXTO_GRIS);
+  dibujarBoton(220, 248, 240, 55, textoBoton, colorBoton);
+  tft.setTextDatum(TL_DATUM);
+
+  while (true) {
+    int x, y;
+    if (!leerToque(x, y)) continue;
+    if (dentro(x, y, 20, 248, 180, 55))  return false;
+    if (dentro(x, y, 220, 248, 240, 55)) return true;
+  }
+}
+
+int BronquitoUI::revisarManiobra(const String &titulo, const String &l1, const String &l2) {
+  hasDot = false;
+  tft.fillScreen(COLOR_FONDO);
+  tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
+  tft.setTextDatum(ML_DATUM);
+  tft.setTextColor(COLOR_FONDO, BRONQUITO_CYAN);
+  tft.setTextSize(2);
+  escribir(titulo, 15, 20);
+
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextColor(BRONQUITO_CYAN, COLOR_FONDO);
+  tft.setTextSize(3);
+  escribir(l1.substring(0, 20), 240, 105);
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_FONDO);
+  escribir(l2.substring(0, 36), 240, 150);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_FONDO);
+  escribir("¿Aceptás esta medición?", 240, 195);
+
+  dibujarBoton(10, 248, 140, 55, "Cancelar", COLOR_TEXTO_GRIS);
+  dibujarBoton(165, 248, 145, 55, "Repetir", BRONQUITO_ORANGE);
+  dibujarBoton(325, 248, 145, 55, "Aceptar", COLOR_VERDE_OK);
+  tft.setTextDatum(TL_DATUM);
+
+  while (true) {
+    int x, y;
+    if (!leerToque(x, y)) continue;
+    if (dentro(x, y, 10, 248, 140, 55))  return -1;
+    if (dentro(x, y, 165, 248, 145, 55)) return 0;
+    if (dentro(x, y, 325, 248, 145, 55)) return 1;
   }
 }

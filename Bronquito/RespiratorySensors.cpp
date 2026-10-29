@@ -1,393 +1,127 @@
 #include "RespiratorySensors.h"
 
-// Variable de bandera global para la ISR del Timer por Hardware
-static volatile bool flagTimerSensors = false;
-
-void IRAM_ATTR onTimerSensorsISR() {
-  flagTimerSensors = true;
-}
-
-RespiratorySensors::RespiratorySensors(uint8_t pinFlujo, uint8_t pinPIM)
-  : _pinFlujo(pinFlujo), _pinPIM(pinPIM), _vZeroFlujo(1.00f), _vZeroPIM(1.65f),
-    _factorBTPS(1.00f), _tempAmb(20.0f), _humedadRel(50.0f),
-    _totalMuestras(0), _idxInicioEspiracion(-1), _idxFinEspiracion(-1), _timer(NULL) {}
+RespiratorySensors::RespiratorySensors(int pinFlujo, int pinPIM)
+  : _pinFlujo(pinFlujo), _pinPIM(pinPIM),
+    vZeroFlujo(0.0f), vZeroPIM(0.0f),
+    vFlujoFiltrado(0.0f), vPIMFiltrado(0.0f),
+    volumen_L(0.0f), fase(0), enEvento(false),
+    muestrasSinFlujo(0), presionBase(0.0f),
+    volumenPendiente(0.0f), tInicio_us(0) {}
 
 void RespiratorySensors::begin() {
+  pinMode(_pinFlujo, INPUT);
+  pinMode(_pinPIM, INPUT);
+  analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
-  _timer = timerBegin(1000000);
-  timerAttachInterrupt(_timer, &onTimerSensorsISR);
-  configurarTimerFrecuencia(100);
 }
 
-void RespiratorySensors::setCondicionesAmbientales(float factorBTPS, float tempC, float humPct) {
-  _factorBTPS = factorBTPS;
-  _tempAmb    = tempC;
-  _humedadRel = humPct;
+float RespiratorySensors::leerV(int pin) const {
+  uint32_t suma = 0;
+  const int N_PROM = 4;
+  for (int i = 0; i < N_PROM; i++) {
+    suma += analogReadMilliVolts(pin);
+  }
+  return suma / (1000.0f * N_PROM);
 }
 
-void RespiratorySensors::configurarTimerFrecuencia(uint32_t freqHz) {
-  uint64_t alarmValMicros = 1000000 / freqHz;
-  timerAlarm(_timer, alarmValMicros, true, 0);
-}
+void RespiratorySensors::realizarTara() {
+  const int MUESTRAS_TARA = 200;
+  float sumaFlujo = 0.0f, sumaPIM = 0.0f;
 
-bool RespiratorySensors::realizarTara() {
-  long sumaFlujo = 0;
-  long sumaPIM   = 0;
-  const int MUESTRAS = 50;
-
-  for (int i = 0; i < MUESTRAS; i++) {
-    sumaFlujo += analogRead(_pinFlujo);
-    sumaPIM   += analogRead(_pinPIM);
-    delay(20);
+  for (int i = 0; i < MUESTRAS_TARA; i++) {
+    sumaFlujo += leerV(_pinFlujo);
+    sumaPIM   += leerV(_pinPIM);
+    delay(5);
   }
 
-  _vZeroFlujo = ((float)sumaFlujo / MUESTRAS / 4095.0f) * 3.3f;
-  _vZeroPIM   = ((float)sumaPIM   / MUESTRAS / 4095.0f) * 3.3f;
-  return true;
+  vZeroFlujo = sumaFlujo / MUESTRAS_TARA;
+  vZeroPIM   = sumaPIM   / MUESTRAS_TARA;
+
+  vFlujoFiltrado = vZeroFlujo;
+  vPIMFiltrado   = vZeroPIM;
+
+  iniciarManiobra();
 }
 
-// ==========================================
-// 1. ADQUISICIÓN Y MUESTREO
-// ==========================================
-bool RespiratorySensors::adquirirDatosEspirometria(volatile bool &cancelFlag) {
-  _totalMuestras = 0;
-  _idxInicioEspiracion = -1;
-  _idxFinEspiracion = -1;
+void RespiratorySensors::iniciarManiobra() {
+  volumen_L        = 0.0f;
+  fase             = 0;
+  enEvento         = false;
+  muestrasSinFlujo = 0;
+  presionBase      = 0.0f;
+  volumenPendiente = 0.0f;
+  tInicio_us       = micros();
 
-  configurarTimerFrecuencia(100); // 100 Hz
-  realizarTara();
+  bufferMuestras.clear();
+  bufferMuestras.reserve(1500); // Espacio reservado para 15 segundos a 100 Hz
+}
 
-  unsigned long tInicioEspera = millis();
-  bool inicioDetectado = false;
-  float volAcumuladoATPS = 0.0f;
-  const float DT = 0.01f;
+MuestraEspiro RespiratorySensors::procesarMuestra() {
+  float vFlujoBruto = leerV(_pinFlujo);
+  float vPIMBruto   = leerV(_pinPIM);
 
-  while (_totalMuestras < MAX_MUESTRAS_ESPIRO) {
-    if (cancelFlag) return false;
+  vFlujoFiltrado = ALPHA_FILTRO * vFlujoBruto + (1.0f - ALPHA_FILTRO) * vFlujoFiltrado;
+  vPIMFiltrado   = ALPHA_FILTRO * vPIMBruto   + (1.0f - ALPHA_FILTRO) * vPIMFiltrado;
 
-    if (flagTimerSensors) {
-      flagTimerSensors = false;
+  float presion_cmH2O = K_PIM * (vPIMFiltrado - vZeroPIM);
+  float vNetoFlujo = vFlujoFiltrado - vZeroFlujo;
+  float magnitud_Lmin = (vNetoFlujo > ZONA_MUERTA_V) ? K_FLUJO * sqrtf(vNetoFlujo) : 0.0f;
 
-      int rawFlujo = analogRead(_pinFlujo);
-      int rawPIM   = analogRead(_pinPIM);
+  float flujo_Lmin = 0.0f;
 
-      float vFlujo = ((float)rawFlujo / 4095.0f) * 3.3f;
-      float vPIM   = ((float)rawPIM   / 4095.0f) * 3.3f;
+  if (magnitud_Lmin == 0.0f) {
+    muestrasSinFlujo++;
+    if (muestrasSinFlujo >= N_FIN_EVENTO) {
+      enEvento = false;
+      fase = 0;
+      volumenPendiente = 0.0f;
+    }
+    if (!enEvento) {
+      presionBase += ALPHA_BASE * (presion_cmH2O - presionBase);
+    }
+  } else {
+    muestrasSinFlujo = 0;
+    if (!enEvento) {
+      enEvento = true;
+      fase = 0;
+      volumenPendiente = 0.0f;
+    }
 
-      float vNetoFlujo = vFlujo - _vZeroFlujo;
-      if (vNetoFlujo < 0.005f) vNetoFlujo = 0.0f;
+    if (fase == 0) {
+      float dP = presion_cmH2O - presionBase;
+      if (dP > UMBRAL_FASE)       fase =  1;
+      else if (dP < -UMBRAL_FASE) fase = -1;
 
-      float flujo_Ls = (FACTOR_VENTURI_FLUJO * sqrt(vNetoFlujo)) / 60.0f;
-
-      if ((vPIM - _vZeroPIM) < 0.0f) {
-        flujo_Ls = -flujo_Ls; // Inspiración
+      if (fase == 0) {
+        volumenPendiente += (magnitud_Lmin / 60.0f) * DT;
+      } else {
+        volumen_L += fase * volumenPendiente;
+        volumenPendiente = 0.0f;
       }
+    }
 
-      if (!inicioDetectado) {
-        if (flujo_Ls > 0.1f) {
-          inicioDetectado = true;
-          _idxInicioEspiracion = _totalMuestras;
-        } else if ((millis() - tInicioEspera) > 3000) {
-          return false; // Error Criterio 1: >3s sin soplar
-        }
-      }
-
-      _bufferFlujo[_totalMuestras] = flujo_Ls * _factorBTPS;
-
-      volAcumuladoATPS += (flujo_Ls * DT);
-      _bufferVolumen[_totalMuestras] = volAcumuladoATPS * _factorBTPS;
-
-      _totalMuestras++;
+    if (fase != 0) {
+      flujo_Lmin = fase * magnitud_Lmin;
     }
   }
-  return true;
-}
 
-bool RespiratorySensors::adquirirDatosPIM(volatile bool &cancelFlag) {
-  _totalMuestras = 0;
+  volumen_L += (flujo_Lmin / 60.0f) * DT;
 
-  configurarTimerFrecuencia(70); // 70 Hz
-  realizarTara();
-
-  while (_totalMuestras < MAX_MUESTRAS_PIM) {
-    if (cancelFlag) return false;
-
-    if (flagTimerSensors) {
-      flagTimerSensors = false;
-
-      int rawPIM   = analogRead(_pinPIM);
-      int rawFlujo = analogRead(_pinFlujo);
-
-      float vPIM   = ((float)rawPIM   / 4095.0f) * 3.3f;
-      float vFlujo = ((float)rawFlujo / 4095.0f) * 3.3f;
-
-      _bufferPIM[_totalMuestras] = (vPIM - _vZeroPIM) * FACTOR_PSA071040_CMH2O;
-
-      float vNetoFlujo = vFlujo - _vZeroFlujo;
-      if (vNetoFlujo < 0.005f) vNetoFlujo = 0.0f;
-      _bufferFlujo[_totalMuestras] = FACTOR_VENTURI_FLUJO * sqrt(vNetoFlujo); // Flujo fuga L/min
-
-      _totalMuestras++;
-    }
-  }
-  return true;
-}
-
-// ==========================================
-// 2. CÁLCULO DE PARÁMETROS
-// ==========================================
-Metricasespirometria RespiratorySensors::calcularMetricasEspirometria() {
-  Metricasespirometria m = {0};
-
-  if (_idxInicioEspiracion < 0) {
-    m.codigoValidacion = 1;
-    return m;
-  }
-
-  float maxFlujo = 0.0f;
-  for (int i = _idxInicioEspiracion; i < _totalMuestras; i++) {
-    if (_bufferFlujo[i] > maxFlujo) maxFlujo = _bufferFlujo[i];
-  }
-  m.PEF = maxFlujo * 60.0f;
-
-  float maxVol = 0.0f;
-  for (int i = _idxInicioEspiracion; i < _totalMuestras; i++) {
-    if (_bufferVolumen[i] > maxVol) {
-      maxVol = _bufferVolumen[i];
-      _idxFinEspiracion = i;
-    }
-  }
-  m.FVC = maxVol;
-
-  int idxFEV1 = _idxInicioEspiracion + 100;
-  m.FEV1 = (idxFEV1 < _totalMuestras) ? _bufferVolumen[idxFEV1] : m.FVC;
-
-  if (m.FVC > 0.0f) m.Tiffeneau = (m.FEV1 / m.FVC) * 100.0f;
-
-  float minVol = m.FVC;
-  for (int i = _idxFinEspiracion; i < _totalMuestras; i++) {
-    if (_bufferVolumen[i] < minVol) minVol = _bufferVolumen[i];
-  }
-  m.FIVC = m.FVC - minVol;
-
-  int idxFIV1 = _idxFinEspiracion + 100;
-  m.FIV1 = (idxFIV1 < _totalMuestras) ? (m.FVC - _bufferVolumen[idxFIV1]) : m.FIVC;
-
-  m.t_exhalacion = (float)(_idxFinEspiracion - _idxInicioEspiracion) * 0.01f;
-  m.codigoValidacion = validarEspirometria(m);
+  MuestraEspiro m;
+  m.tiempo_s      = (micros() - tInicio_us) / 1e6f;
+  m.vFlujo_V      = vFlujoFiltrado;
+  m.vPIM_V        = vPIMFiltrado;
+  m.flujo_Lmin    = flujo_Lmin;
+  m.presion_cmH2O = presion_cmH2O;
+  m.volumen_L     = volumen_L;
+  m.fase          = (magnitud_Lmin > 0.0f) ? fase : 0;
 
   return m;
 }
 
-MetricasPIM RespiratorySensors::calcularMetricasPIM() {
-  MetricasPIM m = {0};
-
-  float minPresionPico = 0.0f;
-  float maxFlujoFuga   = 0.0f;
-
-  for (int i = 0; i < _totalMuestras; i++) {
-    if (_bufferPIM[i] < minPresionPico) minPresionPico = _bufferPIM[i];
-    if (_bufferFlujo[i] > maxFlujoFuga) maxFlujoFuga = _bufferFlujo[i];
-  }
-
-  m.pimPico_cmH2O = minPresionPico;
-  m.flujoFugaMax_Lmin = maxFlujoFuga;
-  m.duracion_s = (float)_totalMuestras * (1.0f / 70.0f);
-
-  const int MUESTRAS_1SEG = 70;
-  float minSumaVentana = 0.0f;
-
-  if (_totalMuestras >= MUESTRAS_1SEG) {
-    for (int i = 0; i <= _totalMuestras - MUESTRAS_1SEG; i++) {
-      float sumaAux = 0.0f;
-      for (int j = i; j < i + MUESTRAS_1SEG; j++) {
-        sumaAux += _bufferPIM[j];
-      }
-      if (i == 0 || sumaAux < minSumaVentana) {
-        minSumaVentana = sumaAux;
-      }
-    }
-    m.pimSostenida_cmH2O = minSumaVentana / (float)MUESTRAS_1SEG;
-  } else {
-    m.pimSostenida_cmH2O = m.pimPico_cmH2O;
-  }
-
-  m.codigoValidacion = validarIntentoPIM(m);
-  return m;
-}
-
-// ==========================================
-// 3. VALIDACIONES
-// ==========================================
-int RespiratorySensors::validarEspirometria(const Metricasespirometria &m) {
-  if (m.t_exhalacion < 6.0f) return 3;
-  if (m.FIVC > (m.FVC * 1.05f)) return 5;
-
-  int idxUltimoSegundo = _idxFinEspiracion - 100;
-  if (idxUltimoSegundo >= _idxInicioEspiracion) {
-    float dVol = _bufferVolumen[_idxFinEspiracion] - _bufferVolumen[idxUltimoSegundo];
-    if (dVol >= 0.025f) return 4;
-  }
-
-  return 0;
-}
-
-int RespiratorySensors::validarIntentoPIM(const MetricasPIM &m) {
-  if (m.flujoFugaMax_Lmin > 2.0f) return 1;
-  if (m.duracion_s < 1.5f) return 2;
-  return 0;
-}
-
-bool RespiratorySensors::evaluarReproducibilidadPIM(SesionPIM &sesion) {
-  int validos[8];
-  int cantValidos = 0;
-
-  for (int i = 0; i < sesion.totalIntentosRealizados; i++) {
-    if (sesion.intentos[i].codigoValidacion == 0) {
-      validos[cantValidos++] = i;
-    }
-  }
-
-  if (cantValidos < 3) return false;
-
-  for (int i = 0; i < cantValidos - 2; i++) {
-    for (int j = i + 1; j < cantValidos - 1; j++) {
-      for (int k = j + 1; k < cantValidos; k++) {
-        float v1 = abs(sesion.intentos[validos[i]].pimSostenida_cmH2O);
-        float v2 = abs(sesion.intentos[validos[j]].pimSostenida_cmH2O);
-        float v3 = abs(sesion.intentos[validos[k]].pimSostenida_cmH2O);
-
-        float maxVal = max(v1, max(v2, v3));
-        float minVal = min(v1, min(v2, v3));
-
-        if (((maxVal - minVal) / maxVal) <= 0.10f) {
-          sesion.indicesValidosReproducibles[0] = validos[i];
-          sesion.indicesValidosReproducibles[1] = validos[j];
-          sesion.indicesValidosReproducibles[2] = validos[k];
-          sesion.pimReportada_cmH2O = -maxVal;
-          sesion.sesionExitosa = true;
-          return true;
-        }
-      }
-    }
-  }
-
-  sesion.sesionExitosa = false;
-  return false;
-}
-
-// ==========================================
-// 4. PREPARACIÓN DE TRAMAS (JSON Y CSV)
-// ==========================================
-String RespiratorySensors::prepararJSONResumenEspiro(const Metricasespirometria &m, const String &idEval, const String &fechaHora) {
-  String json = "{\n";
-  json += "  \"id_evaluacion\": \"" + idEval + "\",\n";
-  json += "  \"tipo\": \"ESPIROMETRIA\",\n";
-  json += "  \"fecha_hora\": \"" + fechaHora + "\",\n";
-  json += "  \"sincronizado\": false,\n";
-
-  if (m.codigoValidacion == 0) {
-    json += "  \"fvc\": " + String(m.FVC, 2) + ",\n";
-    json += "  \"fev1\": " + String(m.FEV1, 2) + ",\n";
-    json += "  \"pef\": " + String(m.PEF, 1) + ",\n";
-    json += "  \"fivc\": " + String(m.FIVC, 2) + ",\n";
-    json += "  \"fiv1\": " + String(m.FIV1, 2) + ",\n";
-  } else {
-    json += "  \"fvc\": null,\n";
-    json += "  \"fev1\": null,\n";
-    json += "  \"pef\": null,\n";
-    json += "  \"fivc\": null,\n";
-    json += "  \"fiv1\": null,\n";
-  }
-
-  json += "  \"pim_sostenida_cmh2o\": null,\n";
-  json += "  \"pem_sostenida_cmh2o\": null,\n";
-  json += "  \"resistencia_sugerida_cmh2o\": null,\n";
-  json += "  \"temperatura_c\": " + String(_tempAmb, 1) + ",\n";
-  json += "  \"humedad_rel_pct\": " + String(_humedadRel, 1) + "\n";
-  json += "}";
-  return json;
-}
-
-String RespiratorySensors::prepararJSONResumenPIM(const SesionPIM &sesion, const String &idEval, const String &fechaHora) {
-  String json = "{\n";
-  json += "  \"id_evaluacion\": \"" + idEval + "\",\n";
-  json += "  \"tipo\": \"PIM\",\n";
-  json += "  \"fecha_hora\": \"" + fechaHora + "\",\n";
-  json += "  \"sincronizado\": false,\n";
-  json += "  \"fvc\": null,\n";
-  json += "  \"fev1\": null,\n";
-  json += "  \"pef\": null,\n";
-  json += "  \"fivc\": null,\n";
-  json += "  \"fiv1\": null,\n";
-
-  if (sesion.sesionExitosa) {
-    json += "  \"pim_sostenida_cmh2o\": " + String(abs(sesion.pimReportada_cmH2O), 1) + ",\n";
-  } else {
-    json += "  \"pim_sostenida_cmh2o\": null,\n";
-  }
-
-  json += "  \"pem_sostenida_cmh2o\": null,\n";
-  json += "  \"resistencia_sugerida_cmh2o\": null,\n";
-  json += "  \"temperatura_c\": " + String(_tempAmb, 1) + ",\n";
-  json += "  \"humedad_rel_pct\": " + String(_humedadRel, 1) + "\n";
-  json += "}";
-  return json;
-}
-
-String RespiratorySensors::prepararCSVCurvaEspiro() {
-  String csv = "Tiempo_s,Flujo_Ls,Volumen_L\n";
-  for (int i = 0; i < _totalMuestras; i++) {
-    csv += String(i * 0.01f, 2) + ",";
-    csv += String(_bufferFlujo[i], 3) + ",";
-    csv += String(_bufferVolumen[i], 3) + "\n";
-  }
-  return csv;
-}
-
-String RespiratorySensors::prepararCSVCurvaPIM() {
-  String csv = "Tiempo_s,PIM_cmH2O,FlujoFuga_Lmin\n";
-  const float DT = 1.0f / 70.0f;
-  for (int i = 0; i < _totalMuestras; i++) {
-    csv += String(i * DT, 3) + ",";
-    csv += String(_bufferPIM[i], 2) + ",";
-    csv += String(_bufferFlujo[i], 2) + "\n";
-  }
-  return csv;
-}
-
-String RespiratorySensors::obtenerTextoErrorEspiro(int codigoError) {
-  switch (codigoError) {
-    case 0:
-      return "Maniobra valida";
-    case 1:
-      return "Tardo mas de 3s en comenzar a soplar";
-    case 2:
-      return "Inicio vacilante / BEV muy alto (>100mL)";
-    case 3:
-      return "Soplido muy corto (debe durar al menos 6s)";
-    case 4:
-      return "Sin meseta / Corto antes de tiempo";
-    case 5:
-      return "Inspiracion previa incompleta (FIVC < FVC)";
-    case 6:
-      return "Maniobra cancelada por el usuario";
-    default:
-      return "Error de maniobra desconocido";
-  }
-}
-
-String RespiratorySensors::obtenerTextoErrorPIM(int codigoError) {
-  switch (codigoError) {
-    case 0:
-      return "Intento valido";
-    case 1:
-      return "Fuga detectada (Asegure oclusion de la boquilla)";
-    case 2:
-      return "Esfuerzo insuficiente (duracion menor a 1.5s)";
-    case 6:
-      return "Intento cancelado por el usuario / Fatiga";
-    default:
-      return "Error en intento PIM desconocido";
-  }
+String RespiratorySensors::obtenerLineaCSV(const MuestraEspiro& m) const {
+  char buf[128];
+  snprintf(buf, sizeof(buf), "%.3f,%.4f,%.4f,%.2f,%.2f,%.4f,%d",
+           m.tiempo_s, m.vFlujo_V, m.vPIM_V, m.flujo_Lmin, m.presion_cmH2O, m.volumen_L, m.fase);
+  return String(buf);
 }

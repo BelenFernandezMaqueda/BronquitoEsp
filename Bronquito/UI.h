@@ -2,18 +2,17 @@
 #define UI_H
 
 #include <Arduino.h>
+#include <vector>
 #include <SPI.h>
 #include <TFT_eSPI.h>
 #include <XPT2046_Touchscreen.h>
 #include "SystemState.h"
 
-// --- PINES DEDICADOS DEL TOUCH (CANAL HSPI) ---
 #define TOUCH_CS   33
 #define TOUCH_CLK  32
 #define TOUCH_DIN  25
 #define TOUCH_DO   26
 
-// --- PALETA DE COLORES BRONQUITO ---
 #define COLOR_FONDO       0xFFFF
 #define BRONQUITO_YELLOW  0xF6AC
 #define BRONQUITO_ORANGE  0xF3C4
@@ -32,17 +31,46 @@
 #define DOT_R 4
 enum EstadoConexion { CON_NINGUNA, CON_SOLO_WIFI, CON_WIFI_Y_COMPU };
 
+// Señal completa de una evaluación, leída del .csv
+// Volumen = integral del flujo (L/min -> L), con signo: sube al exhalar y baja al inhalar
+struct SerieEval {
+  std::vector<float> t, p, q, v;   // tiempo (s), presión (cmH2O), flujo (L/min), volumen (L)
+};
+
+// Una métrica para mostrar en el resumen (ej: "FEV1", "2.35", "L")
+struct MetricaItem {
+  String etiqueta;
+  String valor;
+  String unidad;
+};
+
 class BronquitoUI {
 public:
   BronquitoUI();
   void begin();
 
-  // Métodos de dibujo de pantallas
   void drawLoginScreen();
   void drawPinScreen();
   void drawMainMenu();
 
-  // Feedbacks visuales, estado de sincronización y DNI del usuario
+  // Pantallas de Calibración
+  void drawCalibMenu();
+  void drawCalibPimInstructions();
+  void drawCalibEspInstructions();
+  void drawCalibEspRunning();
+  void updateCalibEspProgress(float flujoLmin, float volumenL, float tiempoSec);
+
+  // Recorrido guiado de calibración (PIM + Espirometría)
+  void drawCalibPimRunning();
+  void updateCalibPimProgress(float presionCmH2O, float tiempoSec);
+  // Sin delay: se puede llamar en pleno muestreo. true si tocaron "Cancelar" durante la captura
+  bool cancelarTocado();
+  // Pantalla de un paso (instrucciones o descanso). true = botón principal, false = Cancelar
+  bool mostrarPasoCalibracion(const String& titulo, const String& subtitulo, const String *lineas, int n,
+                              const String& textoBoton, uint16_t colorBoton);
+  // Revisión de una maniobra. 1 = Aceptar, 0 = Repetir, -1 = Cancelar todo
+  int  revisarManiobra(const String& titulo, const String& l1, const String& l2 = "");
+
   void showSyncFeedback();
   void showLoginFeedback();
   void showPinStatus(bool correct);
@@ -52,36 +80,27 @@ public:
   void setEstadoConexion(EstadoConexion e) { estadoCon = e; }
   int  elegirConexion(const String& ssid);
 
-  // Mensaje centrado de dos líneas (ej: "Conectando a:", "MiRed")
   void mostrarMensaje(const String &l1, const String &l2 = "", uint16_t color = BRONQUITO_CYAN);
-
-  // Lista de redes. Devuelve el índice elegido (0..n-1), o:
-  //  -1 = reescanear, -2 = escribir el nombre a mano, -3 = volver
   int elegirRed(const String *nombres, const int *rssi, int n);
-
-  // Teclado en pantalla (bloqueante): devuelve el texto cuando se toca OK
   String pedirTexto(const String &titulo, String inicial = "");
-
-  // Teclado numérico (hasta 3 dígitos) con un mensaje arriba (hasta 3 líneas).
-  // "prefijo" se muestra delante de lo que se escribe (ej: "10.200.0.").
-  // Devuelve los dígitos al tocar OK, o "" si se toca VOLVER.
   String pedirCodigo(const String *lineas, int nLineas, const String &prefijo);
+  bool pedirConfirmacion(const String& titulo, const String& l1, const String& l2 = "");
+  String pedirPin(const String& titulo, const String& subtitulo = "");
+  void mostrarEstadoConexion(const String& ssid, const String& ipCompu);
+  void mostrarFrecuencia(int sesiones, const bool *dias, const String& vigenteDesde, bool recienActualizada);
 
-  bool   pedirConfirmacion(const String& titulo, const String& l1, const String& l2 = "");   // true = ACEPTAR
-  String pedirPin(const String& titulo, const String& subtitulo = "");                       // 4 dígitos, "" si VOLVER
+  // Historial
+  int  mostrarHistorial();   // 0 = Calibraciones, 1 = Entrenamientos, -1 = Volver al menú
+  int  elegirCalibracion(const String *fechas, const String *tipos, int n);  // índice, o -1 = Volver
+  // Resumen de una evaluación. Devuelve 0 = Volver, 1 = Graficar
+  // "pie" = condiciones ambientales, en dos renglones separados por " | "
+  int  mostrarResumenCalibracion(const String& titulo, const String& fecha, const MetricaItem *m, int n, const String& pie = "");
+  // Gráfico x-y. Devuelve 0 = Volver, 1 = botón alternativo (si botonAlt no está vacío)
+  int  mostrarGrafico(const String& titulo, const String& etiquetaX, const String& etiquetaY,
+                      const float *x, const float *y, int n, const String& botonAlt = "");
 
-  // Pantalla que se abre al tocar el circulito de estado (bloqueante, hasta VOLVER).
-  // ssid = "" si no hay WiFi; ipCompu = "" si todavía no se configuró la compu.
-  void   mostrarEstadoConexion(const String& ssid, const String& ipCompu);
-
-  // Pantalla de CONFIGURACIÓN con la frecuencia recomendada (bloqueante, hasta VOLVER).
-  // sesiones = 0 si no hay ninguna; dias[7]: 0 = lunes ... 6 = domingo; vigenteDesde "AAAA-MM-DD".
-  void   mostrarFrecuencia(int sesiones, const bool *dias, const String& vigenteDesde, bool recienActualizada);
-
-  // Escucha de eventos táctiles
   UIEvent checkTouch(SystemState currentState);
 
-  // Gestión de PIN
   String getPinEntered() const { return pinEntered; }
   void clearPin() { pinEntered = ""; }
 
@@ -96,19 +115,17 @@ private:
   bool isSynced;
   EstadoConexion estadoCon;
 
-  // Rastro del punto rojo de depuración
   int dotX, dotY;
   bool hasDot;
+  bool cancelArmado;   // true recién cuando se soltó la pantalla (evita tomar como Cancelar el toque de "Comenzar")
 
-  // Auxiliares privados
-  void escribir(const String &s, int x, int y);   // drawString con tildes, ñ, ¡ y ¿
-  void dibujarIndicadorConexion(int cx, int cy);  // circulito verde / amarillo / rojo
+  void escribir(const String &s, int x, int y);
+  void dibujarIndicadorConexion(int cx, int cy);
   void updatePinDisplay();
   void redrawArea(int x, int y, int w, int h, SystemState currentState);
   void clearTouchDot(SystemState currentState);
   void drawTouchDot(int x, int y);
 
-  //Para conexion wifi
   bool leerToque(int &x, int &y);
   void dibujarBoton(int x, int y, int w, int h, const String &texto, uint16_t color, int tam = 2);
   void dibujarCampoTexto(const String &texto);

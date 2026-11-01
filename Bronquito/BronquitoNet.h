@@ -92,6 +92,16 @@ public:
 
   RespuestaPin verificarPin(const String& usuario, const String& pin);
 
+  // Pedidos que la web le dejó al equipo (GET /dispositivo/solicitudes). Devuelve el código HTTP
+  int pedirSolicitudes(JsonDocument& resp);
+  // POST /dispositivo/solicitudes/<id>/confirmar. true si respondió 200
+  bool confirmarSolicitud(int id, bool ok, const char* detalle);
+
+  // Frecuencia de entrenamiento del paciente (GET /dispositivo/frecuencia). Devuelve el código HTTP
+  int pedirFrecuencia(const String& usuario, JsonDocument& resp);
+  // POST /dispositivo/frecuencia/confirmar
+  void confirmarFrecuencia(JsonVariantConst idFrecuencia);
+
   // Texto corto (sin acentos) para mostrar en pantalla según el código de llamarApi
   String textoError(int http);
 

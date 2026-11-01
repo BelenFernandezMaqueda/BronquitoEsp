@@ -31,18 +31,20 @@
 #define DOT_R 4
 enum EstadoConexion { CON_NINGUNA, CON_SOLO_WIFI, CON_WIFI_Y_COMPU };
 
-// Señal completa de una evaluación, leída del .csv
-// Volumen = integral del flujo (L/min -> L), con signo: sube al exhalar y baja al inhalar
-struct SerieEval {
-  std::vector<float> t, p, q, v;   // tiempo (s), presión (cmH2O), flujo (L/min), volumen (L)
-};
-
 // Una métrica para mostrar en el resumen (ej: "FEV1", "2.35", "L")
 struct MetricaItem {
   String etiqueta;
   String valor;
   String unidad;
 };
+
+inline MetricaItem metrica(const char *etiqueta, const String &valor, const char *unidad) {
+  MetricaItem m;
+  m.etiqueta = etiqueta;
+  m.valor = valor;
+  m.unidad = unidad;
+  return m;
+}
 
 class BronquitoUI {
 public:
@@ -57,12 +59,15 @@ public:
   void drawCalibMenu();
   void drawCalibPimInstructions();
   void drawCalibEspInstructions();
-  void drawCalibEspRunning();
-  void updateCalibEspProgress(float flujoLmin, float volumenL, float tiempoSec);
+  // Espirometría: solo se muestra el tiempo (nada de flujo ni volumen mientras se mide)
+  void drawCalibEspRunning(float tTotalSec);
+  void updateCalibEspProgress(float tiempoSec, float tTotalSec);
+  void setHintEsp(const String& texto);   // cambia solo el renglón de ayuda (escribe poco en la pantalla)
 
   // Recorrido guiado de calibración (PIM + Espirometría)
   void drawCalibPimRunning();
   void updateCalibPimProgress(float presionCmH2O, float tiempoSec);
+  void setHintPim(const String& texto);   // renglón de ayuda de la PIM (ej. "Espere..." -> "Inspire con fuerza")
   // Sin delay: se puede llamar en pleno muestreo. true si tocaron "Cancelar" durante la captura
   bool cancelarTocado();
   // Pantalla de un paso (instrucciones o descanso). true = botón principal, false = Cancelar

@@ -340,9 +340,12 @@ void BronquitoUI::drawCalibEspInstructions() {
   tft.setTextDatum(TL_DATUM);
 }
 
-void BronquitoUI::drawCalibEspRunning() {
+static bool g_espMinimoMostrado = false;
+
+void BronquitoUI::drawCalibEspRunning(float tTotalSec) {
   cancelArmado = false;
   hasDot = false;
+  g_espMinimoMostrado = false;
   tft.fillScreen(COLOR_FONDO);
 
   tft.fillRect(0, 0, 480, 40, BRONQUITO_CYAN);
@@ -354,33 +357,21 @@ void BronquitoUI::drawCalibEspRunning() {
   tft.fillRoundRect(30, 55, 420, 175, 10, COLOR_CAMPO_BG);
   tft.drawRoundRect(30, 55, 420, 175, 10, BRONQUITO_CYAN);
 
-  updateCalibEspProgress(0.0f, 0.0f, 0.0f);
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextSize(2);
+  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_CAMPO_BG);
+  escribir("Tiempo restante", 240, 82);
+  tft.setTextPadding(400);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
+  escribir("Espere... no respire", 240, 165);     // se cambia por "Exhale..." recién terminada la tara
+  tft.setTextPadding(0);
+
+  updateCalibEspProgress(0.0f, tTotalSec);
 
   dibujarBoton(120, 245, 240, 50, "Cancelar", COLOR_ROJO_DEL);
   tft.setTextDatum(TL_DATUM);
 }
 
-void BronquitoUI::updateCalibEspProgress(float flujoLmin, float volumenL, float tiempoSec) {
-  // Se borra solo el renglón de cada texto (padding) en vez de toda la tarjeta:
-  // redibujar 400x155 px a 24 bits tarda decenas de ms y atrasaría el muestreo de 100 Hz
-  tft.setTextDatum(MC_DATUM);
-  tft.setTextPadding(400);
-
-  tft.setTextColor(BRONQUITO_CYAN, COLOR_CAMPO_BG);
-  tft.setTextSize(4);
-  escribir(String(flujoLmin, 1) + " L/min", 240, 95);
-
-  tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
-  tft.setTextSize(3);
-  escribir("Vol: " + String(volumenL, 2) + " L", 240, 145);
-
-  tft.setTextColor(COLOR_TEXTO_GRIS, COLOR_CAMPO_BG);
-  tft.setTextSize(2);
-  escribir("Tiempo: " + String(tiempoSec, 1) + " s", 240, 185);
-
-  tft.setTextPadding(0);
-  tft.setTextDatum(TL_DATUM);
-}
 
 void BronquitoUI::dibujarIndicadorConexion(int cx, int cy) {
   uint16_t color = estadoCon == CON_WIFI_Y_COMPU ? COLOR_VERDE_OK
@@ -1279,6 +1270,7 @@ void BronquitoUI::drawCalibPimRunning() {
   tft.drawRoundRect(30, 55, 420, 175, 10, BRONQUITO_CYAN);
 
   updateCalibPimProgress(0.0f, 0.0f);
+  setHintPim("Espere... no respire");   // se cambia por "Inspire..." recién terminada la tara
 
   dibujarBoton(120, 245, 240, 50, "Cancelar", COLOR_ROJO_DEL);
   tft.setTextDatum(TL_DATUM);
@@ -1296,6 +1288,61 @@ void BronquitoUI::updateCalibPimProgress(float presionCmH2O, float tiempoSec) {
   tft.setTextSize(2);
   escribir("Tiempo: " + String(tiempoSec, 1) + " s", 240, 170);
 
+  tft.setTextPadding(0);
+  tft.setTextDatum(TL_DATUM);
+}
+
+// Solo cuenta regresiva y barra. El flujo y el volumen se calculan recién al terminar la medición.
+// Se redibuja lo mínimo para no frenar el muestreo.
+void BronquitoUI::updateCalibEspProgress(float tiempoSec, float tTotalSec) {
+  float restante = tTotalSec - tiempoSec;
+  if (restante < 0.0f) restante = 0.0f;
+
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextPadding(200);
+  tft.setTextColor(BRONQUITO_CYAN, COLOR_CAMPO_BG);
+  tft.setTextSize(4);
+  escribir(String((int)ceilf(restante)) + " s", 240, 122);
+
+  if (!g_espMinimoMostrado && tiempoSec >= 6.0f) {
+    g_espMinimoMostrado = true;
+    tft.setTextPadding(400);
+    tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
+    tft.setTextSize(2);
+    escribir("¡Exhalacion minima alcanzada!", 240, 165);
+  }
+  tft.setTextPadding(0);
+
+  // Barra de progreso con una marca en los 6 s mínimos
+  const int BX = 70, BY = 196, BW = 340, BH = 14;
+  float frac = (tTotalSec > 0.0f) ? tiempoSec / tTotalSec : 0.0f;
+  if (frac < 0.0f) frac = 0.0f;
+  if (frac > 1.0f) frac = 1.0f;
+  int w = (int)(BW * frac);
+  tft.fillRect(BX, BY, w, BH, BRONQUITO_CYAN);
+  tft.fillRect(BX + w, BY, BW - w, BH, COLOR_FONDO);
+  tft.drawRect(BX - 1, BY - 1, BW + 2, BH + 2, COLOR_TEXTO_GRIS);
+  if (tTotalSec > 6.0f) tft.drawFastVLine(BX + (int)(BW * 6.0f / tTotalSec), BY - 5, BH + 10, BRONQUITO_ORANGE);
+
+  tft.setTextDatum(TL_DATUM);
+}
+
+void BronquitoUI::setHintPim(const String &texto) {
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextSize(2);
+  tft.setTextPadding(400);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
+  escribir(texto, 240, 207);
+  tft.setTextPadding(0);
+  tft.setTextDatum(TL_DATUM);
+}
+
+void BronquitoUI::setHintEsp(const String &texto) {
+  tft.setTextDatum(MC_DATUM);
+  tft.setTextSize(2);
+  tft.setTextPadding(400);
+  tft.setTextColor(BRONQUITO_BROWN, COLOR_CAMPO_BG);
+  escribir(texto, 240, 165);
   tft.setTextPadding(0);
   tft.setTextDatum(TL_DATUM);
 }

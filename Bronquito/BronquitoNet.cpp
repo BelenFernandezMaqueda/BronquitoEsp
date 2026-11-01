@@ -271,3 +271,36 @@ RespuestaPin BronquitoNetwork::verificarPin(const String& usuario, const String&
   out.retryAfter = resp["retry_after"] | 0;
   return out;
 }
+
+// ---------------------------------------------------------------------------
+// SOLICITUDES Y FRECUENCIA
+// ---------------------------------------------------------------------------
+int BronquitoNetwork::pedirSolicitudes(JsonDocument& resp) {
+  return llamarApi(servidorGuardado(), "GET", "/dispositivo/solicitudes", "", resp);
+}
+
+bool BronquitoNetwork::confirmarSolicitud(int id, bool ok, const char* detalle) {
+  JsonDocument cuerpo;
+  cuerpo["ok"] = ok;
+  if (detalle != nullptr && detalle[0] != '\0') cuerpo["detalle"] = detalle;
+  String enviar;
+  serializeJson(cuerpo, enviar);
+
+  JsonDocument resp;
+  int http = llamarApi(servidorGuardado(), "POST",
+                       "/dispositivo/solicitudes/" + String(id) + "/confirmar", enviar, resp);
+  return http == 200;
+}
+
+int BronquitoNetwork::pedirFrecuencia(const String& usuario, JsonDocument& resp) {
+  return llamarApi(servidorGuardado(), "GET", "/dispositivo/frecuencia?usuario=" + usuario, "", resp);
+}
+
+void BronquitoNetwork::confirmarFrecuencia(JsonVariantConst idFrecuencia) {
+  JsonDocument cuerpo;
+  cuerpo["id_frecuencia"] = idFrecuencia;
+  String enviar;
+  serializeJson(cuerpo, enviar);
+  JsonDocument confirmacion;
+  llamarApi(servidorGuardado(), "POST", "/dispositivo/frecuencia/confirmar", enviar, confirmacion);
+}

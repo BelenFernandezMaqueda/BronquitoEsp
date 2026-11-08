@@ -166,13 +166,13 @@ bool BronquitoNetwork::pedirMensaje(String& mensaje, bool& compuViva) {
 // ---------------------------------------------------------------------------
 // El cuerpo no se imprime en el monitor serie (puede llevar el PIN).
 int BronquitoNetwork::llamarApi(const String& ip, const char* metodo, const String& ruta,
-                                const String& cuerpo, JsonDocument& resp, uint16_t timeoutMs) {
+                                const String& cuerpo, JsonDocument& resp) {
   resp.clear();
   if (!estaConectado() || ip.length() == 0) return SIN_RED;
 
   HTTPClient http;
   http.setConnectTimeout(3000);
-  http.setTimeout(timeoutMs);
+  http.setTimeout(5000);
   if (!http.begin("http://" + ip + ":" + String(PUERTO_SERVIDOR) + ruta)) return SIN_RED;
   http.addHeader("X-Device-Key", CLAVE_DISPOSITIVO);
   if (cuerpo.length() > 0) http.addHeader("Content-Type", "application/json");
@@ -303,12 +303,4 @@ void BronquitoNetwork::confirmarFrecuencia(JsonVariantConst idFrecuencia) {
   serializeJson(cuerpo, enviar);
   JsonDocument confirmacion;
   llamarApi(servidorGuardado(), "POST", "/dispositivo/frecuencia/confirmar", enviar, confirmacion);
-}
-
-// ---------------------------------------------------------------------------
-// PRUEBAS DE LA SD
-// ---------------------------------------------------------------------------
-// Una espirometría son ~25 KB: se le da más tiempo que al resto de los pedidos.
-int BronquitoNetwork::subirEvaluacion(const String& cuerpo, JsonDocument& resp) {
-  return llamarApi(servidorGuardado(), "POST", "/dispositivo/evaluaciones", cuerpo, resp, 10000);
 }

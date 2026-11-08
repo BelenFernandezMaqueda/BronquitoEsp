@@ -211,8 +211,6 @@ int BronquitoStorage::contarPendientes() {
       String r = ruta;
       r.toLowerCase();
       if (!r.endsWith(".json")) continue;
-      // Los que empiezan con "." los crea la compu al abrir la SD (ej. "._eval_...json" en una Mac): no son pruebas
-      if (ruta.substring(ruta.lastIndexOf('/') + 1).startsWith(".")) continue;
       File f = SD.open(ruta, FILE_READ);
       if (!f) { pendientes++; continue; }
       JsonDocument doc;

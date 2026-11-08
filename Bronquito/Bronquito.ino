@@ -36,7 +36,7 @@ SystemState currentState = STATE_LOGIN;
 Reloj            reloj(rtc, net);
 Evaluaciones     evaluaciones(storage);
 FlujoSesion      sesion(ui, storage, currentState);
-FlujoConexion    conexion(ui, net, storage, evaluaciones, rtc, sesion, currentState);
+FlujoConexion    conexion(ui, net, storage, rtc, sesion, currentState);
 FlujoCalibracion calibracion(ui, sensoresResp, evaluaciones, reloj, btps);
 FlujoHistorial   historial(ui, evaluaciones);
 
@@ -188,22 +188,13 @@ void loop() {
 
     case EVENT_SELECT_HISTORY:
       Serial.println("[FSM] Opción seleccionada: HISTORIAL");
-      // true = tocó "Enviar a la web": sincroniza y vuelve al historial
-      while (historial.ejecutar()) {
-        conexion.enviarDatos();
-        if (currentState == STATE_LOGIN) break;   // al sincronizar aceptó un pedido de formatear: ya quedó en el login
-      }
+      historial.ejecutar();
       sesion.redibujarPantallaActual();
       break;
 
     case EVENT_CALIB_START:
       Serial.println("[FSM] Calibración guiada: PIM + Espirometría");
       calibracion.ejecutar();
-      conexion.ofrecerEnvio();   // "¿Enviar a la web?": si acepta sincroniza; si no, se suben en la próxima
-      if (currentState == STATE_LOGIN) {   // al sincronizar aceptó un pedido de formatear: ya quedó en el login
-        sesion.redibujarPantallaActual();
-        break;
-      }
       currentState = STATE_CALIB_MENU;
       ui.drawCalibMenu();
       break;

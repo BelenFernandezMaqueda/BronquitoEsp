@@ -57,16 +57,6 @@ public:
   // Borra <id>.csv y <id>.json
   void borrar(const String &id);
 
-  // SUBIDA A LA WEB (ver FlujoConexion::subirPendientes)
-  // Pruebas que todavía no se subieron ("sincronizado": false), por nombre de archivo sin la extensión.
-  // Hasta max. -> vacío si no hay tarjeta
-  std::vector<String> listarPendientes(int max);
-  // Cuerpo de POST /dispositivo/evaluaciones: {"usuario", "archivo", "resumen": <el .json>, "csv": "<el .csv>"}.
-  // El .csv se agrega línea por línea para no tenerlo dos veces en memoria. false si no se pudo leer
-  bool armarEnvio(const String &archivo, const String &usuario, String &cuerpo);
-  // Pone "sincronizado": true en el .json, para no volver a subirla
-  bool marcarSincronizado(const String &archivo);
-
 private:
   BronquitoStorage &storage;
 

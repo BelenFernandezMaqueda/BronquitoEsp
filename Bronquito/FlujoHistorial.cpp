@@ -96,11 +96,10 @@ void FlujoHistorial::flujoCalibraciones() {
   }
 }
 
-bool FlujoHistorial::ejecutar() {
+void FlujoHistorial::ejecutar() {
   while (true) {
     int op = ui.mostrarHistorial();
-    if (op < 0) return false;
-    if (op == 2) return true;
+    if (op < 0) return;
     if (op == 0) {
       flujoCalibraciones();
     } else {

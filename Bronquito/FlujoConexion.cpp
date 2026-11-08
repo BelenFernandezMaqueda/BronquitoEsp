@@ -1,8 +1,11 @@
 #include "FlujoConexion.h"
 
-FlujoConexion::FlujoConexion(BronquitoUI &ui, BronquitoNetwork &net, BronquitoStorage &storage, BronquitoRTC &rtc,
-                             FlujoSesion &sesion, SystemState &estado)
-  : ui(ui), net(net), storage(storage), rtc(rtc), sesion(sesion), estado(estado) {}
+// Pruebas que se suben por sincronización como máximo (si hay más, siguen en la próxima)
+static const int MAX_PRUEBAS_POR_SYNC = 100;
+
+FlujoConexion::FlujoConexion(BronquitoUI &ui, BronquitoNetwork &net, BronquitoStorage &storage,
+                             Evaluaciones &evaluaciones, BronquitoRTC &rtc, FlujoSesion &sesion, SystemState &estado)
+  : ui(ui), net(net), storage(storage), evaluaciones(evaluaciones), rtc(rtc), sesion(sesion), estado(estado) {}
 
 // ---------------------------------------------------------------------------
 // ESTADO DE LA CONEXIÓN
@@ -63,6 +66,30 @@ void FlujoConexion::mostrarConfiguracion() {
   bool actualizada = actualizarFrecuencia();
   FrecuenciaGuardada f = storage.leerFrecuencia();
   ui.mostrarFrecuencia(f.sesiones, f.dias, f.vigenteDesde, actualizada);
+}
+
+void FlujoConexion::ofrecerEnvio() {
+  // Sin Wi-Fi o sin compu no se pregunta: las pruebas se suben en la próxima sincronización
+  if (!net.estaConectado() || net.servidorGuardado().length() == 0 || !storage.isSynced()) return;
+  int pendientes = evaluaciones.listarPendientes(MAX_PRUEBAS_POR_SYNC).size();
+  if (pendientes == 0) return;
+
+  bool una = (pendientes == 1);
+  String texto = una ? String("Hay 1 prueba sin enviar") : "Hay " + String(pendientes) + " pruebas sin enviar";
+  if (!ui.pedirConfirmacion("Enviar a la web", texto, una ? "¿Enviarla ahora?" : "¿Enviarlas ahora?")) {
+    Serial.println("[SUBIDA] Se envían en la próxima sincronización");
+    return;
+  }
+  sincronizar();
+}
+
+void FlujoConexion::enviarDatos() {
+  if (!net.estaConectado() || net.servidorGuardado().length() == 0) {
+    ui.mostrarMensaje("No se pudo enviar", net.textoError(SIN_RED), COLOR_ROJO_DEL);   // "Sin Wi-Fi" o "Falta conectar la computadora"
+    delay(2200);
+    return;
+  }
+  sincronizar();
 }
 
 void FlujoConexion::olvidarRedes() {
@@ -193,6 +220,46 @@ int FlujoConexion::procesarSolicitudes() {
   return 200;
 }
 
+// Sube a la web las pruebas de la SD con "sincronizado": false y las marca como subidas.
+// Devuelve cuántas subió. Si algo la frena lo muestra, y lo que falta queda para la próxima sincronización.
+int FlujoConexion::subirPendientes() {
+  if (!storage.isSynced()) return 0;   // sin perfil no se sabe de qué paciente son
+  std::vector<String> pendientes = evaluaciones.listarPendientes(MAX_PRUEBAS_POR_SYNC);
+  int subidas = 0;
+
+  for (size_t i = 0; i < pendientes.size(); i++) {
+    ui.mostrarMensaje("Enviando pruebas a la web...", String(i + 1) + " de " + String(pendientes.size()));
+    String cuerpo;
+    if (!evaluaciones.armarEnvio(pendientes[i], storage.getDNI(), cuerpo)) {
+      Serial.println("[SUBIDA] No se pudo leer " + pendientes[i] + " (queda pendiente)");
+      continue;
+    }
+    JsonDocument resp;
+    int http = net.subirEvaluacion(cuerpo, resp);
+    cuerpo = String();   // libera la memoria antes de armar la siguiente
+    String error = String(resp["error"] | "");
+    Serial.printf("[SUBIDA] %s -> HTTP %d %s%s\n", pendientes[i].c_str(), http,
+                  String(resp["estado"] | "").c_str(), error.c_str());
+
+    if (http == 200) {
+      subidas++;
+      // Si no se pudo marcar, se vuelve a mandar en la próxima: la web la reconoce y no la duplica
+      if (!evaluaciones.marcarSincronizado(pendientes[i]))
+        Serial.println("[SUBIDA] No se pudo marcar " + pendientes[i] + " como sincronizada");
+      continue;
+    }
+    if (http == 400) continue;   // a esa prueba le pasa algo: queda pendiente y se sigue con las demás
+
+    // Sin conexión, clave inválida o paciente no asignado: no tiene sentido seguir con las demás
+    String motivo = (error == "usuario_no_asignado" || error == "sin_paciente_asignado")
+                      ? String("El paciente no está asignado en la web") : net.textoError(http);
+    ui.mostrarMensaje("No se enviaron las pruebas", motivo, COLOR_ROJO_DEL);
+    delay(2200);
+    break;
+  }
+  return subidas;
+}
+
 void FlujoConexion::sincronizar() {
   ui.mostrarMensaje("Sincronizando...");
   RespuestaIdentificar r;
@@ -208,12 +275,20 @@ void FlujoConexion::sincronizar() {
     pedirYVerificarPin("PIN actualizado", "Ingresá tu nuevo PIN");
   }
 
+  // Las pruebas van antes que los pedidos del médico: un RESET se niega mientras haya pruebas sin subir
+  int subidas = subirPendientes();
+
   int http = procesarSolicitudes();
   sesion.refrescarPerfilEnUI();
+  // Así el panel del médico ve cuántas pruebas quedaron sin subir
+  if (subidas > 0) identificarCompu(net.servidorGuardado(), r);
 
-  if (http == 200) ui.mostrarMensaje("¡Sincronizado!", "", COLOR_VERDE_OK);
+  String detalle = "";
+  if (subidas == 1)     detalle = "Se envió 1 prueba";
+  else if (subidas > 1) detalle = "Se enviaron " + String(subidas) + " pruebas";
+  if (http == 200) ui.mostrarMensaje("¡Sincronizado!", detalle, COLOR_VERDE_OK);
   else             ui.mostrarMensaje("No se pudo sincronizar", net.textoError(http), COLOR_ROJO_DEL);
-  delay(1200);
+  delay(subidas > 0 ? 2000 : 1200);
 }
 
 // ---------------------------------------------------------------------------

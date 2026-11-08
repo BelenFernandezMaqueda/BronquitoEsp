@@ -95,7 +95,7 @@ public:
   void mostrarFrecuencia(int sesiones, const bool *dias, const String& vigenteDesde, bool recienActualizada);
 
   // Historial
-  int  mostrarHistorial();   // 0 = Calibraciones, 1 = Entrenamientos, -1 = Volver al menú
+  int  mostrarHistorial();   // 0 = Calibraciones, 1 = Entrenamientos, 2 = Enviar a la web, -1 = Volver al menú
   int  elegirCalibracion(const String *fechas, const String *tipos, int n);  // índice, o -1 = Volver
   // Resumen de una evaluación. Devuelve 0 = Volver, 1 = Graficar
   // "pie" = condiciones ambientales, en dos renglones separados por " | "
